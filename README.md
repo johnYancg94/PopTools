@@ -136,3 +136,7 @@ PopTools/
 - 优雅的降级处理
 
 ---
+
+**注意**: 这是 PopTools 的重构版本，如果遇到问题，可以通过重命名 `__init___old.py` 为 `__init__.py` 来恢复到旧版本。
+
+**Note**: This is a refactored version of PopTools. If you encounter issues, you can revert to the old version by renaming `__init___old.py` back to `__init__.py`.

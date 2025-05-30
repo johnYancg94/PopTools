@@ -643,6 +643,115 @@ class RT_OT_CheckUVs(Operator):
                 break
         return {'FINISHED'}
 
+class RT_OT_CreateAnnotations(Operator):
+    """一键标注 / Create Annotations"""
+    bl_idname = "rt.create_annotations"
+    bl_label = "一键标注"
+    bl_description = "为选定模型创建文本标注"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        selected_objects = bpy.context.selected_objects
+        if not selected_objects:
+            self.report({'WARNING'}, "没有选中的模型")
+            return {'CANCELLED'}
+
+        # 检查或创建Text合集
+        text_collection_name = "Text"
+        text_collection = bpy.data.collections.get(text_collection_name)
+        if not text_collection:
+            text_collection = bpy.data.collections.new(text_collection_name)
+            bpy.context.scene.collection.children.link(text_collection)
+            # 设置合集颜色为绿色 (COLOR_04)
+            text_collection.color_tag = 'COLOR_04'
+
+        # 加载字体
+        try:
+            font_curve = bpy.data.fonts.load("C:\\Windows\\Fonts\\ariblk.ttf") # Arial Black
+        except RuntimeError:
+            self.report({'WARNING'}, "无法加载 Arial Black 字体，请确保已安装。将使用默认字体。")
+            try:
+                font_curve = bpy.data.fonts.load("arial.ttf") # Fallback
+            except RuntimeError:
+                font_curve = bpy.data.fonts[0] if bpy.data.fonts else None # Last resort
+                if not font_curve:
+                    self.report({'ERROR'}, "无法加载任何字体")
+                    return {'CANCELLED'}
+
+        for obj in selected_objects:
+            if obj.type != 'MESH': # 只处理网格物体
+                continue
+
+            # 创建文本对象
+            text_data = bpy.data.curves.new(name=f"{obj.name}_label_data", type='FONT')
+            text_data.body = obj.name
+            text_data.font = font_curve
+            text_data.align_x = 'CENTER'
+            text_data.align_y = 'CENTER'
+
+            text_object = bpy.data.objects.new(name=f"{obj.name}_label", object_data=text_data)
+            
+            # 将文本对象链接到Text合集
+            # 首先从场景主合集中取消链接（如果存在）
+            if text_object.name in bpy.context.scene.collection.objects:
+                bpy.context.scene.collection.objects.unlink(text_object)
+            # 链接到目标合集
+            if text_object.name not in text_collection.objects:
+                 text_collection.objects.link(text_object)
+
+            # 设置变换
+            name_parts = obj.name.lower().split('_')
+            obj_type = ""
+            if len(name_parts) > 1:
+                obj_type = name_parts[1] # 例如 'mesh_character_body_01' -> 'character'
+
+            if obj_type == "characters":
+                text_object.location = (0, obj.location.y, obj.location.z + 0.006)
+                text_object.rotation_euler = (math.radians(90), 0, 0)
+                text_object.scale = (0.2, 0.2, 0.2)
+            elif obj_type == "head":
+                text_object.location = (0, obj.location.y, obj.location.z + 1.0)
+                text_object.rotation_euler = (math.radians(90), 0, 0)
+                text_object.scale = (0.2, 0.2, 0.2)
+            else: # 默认变换或可以根据其他类型调整
+                text_object.location = (0, obj.location.y, obj.location.z + 0.5) # 默认值
+                text_object.rotation_euler = (math.radians(90), 0, 0)
+                text_object.scale = (0.2, 0.2, 0.2)
+            
+            # 设置视图显示属性 In Front
+            text_object.show_in_front = True
+
+        self.report({'INFO'}, f"成功为 {len(selected_objects)} 个模型创建标注")
+        return {'FINISHED'}
+
+class RT_OT_ClearAnnotations(Operator):
+    """清理标注 / Clear Annotations"""
+    bl_idname = "rt.clear_annotations"
+    bl_label = "清理标注"
+    bl_description = "删除Text合集下的所有标注对象"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        text_collection_name = "Text"
+        text_collection = bpy.data.collections.get(text_collection_name)
+
+        if not text_collection:
+            self.report({'INFO'}, "未找到 'Text' 合集，无需清理。")
+            return {'CANCELLED'}
+
+        objects_to_remove = [obj for obj in text_collection.objects]
+        count = len(objects_to_remove)
+
+        if not objects_to_remove:
+            self.report({'INFO'}, "'Text' 合集为空，无需清理。")
+            return {'FINISHED'}
+
+        for obj in objects_to_remove:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        
+        self.report({'INFO'}, f"成功清理 {count} 个标注对象。")
+        return {'FINISHED'}
+
 # ============================================================================
 # 面板定义 / Panel Definitions
 # ============================================================================
@@ -764,6 +873,11 @@ class RT_PT_TextureRenamerPanel(Panel):
         row = char_box.row(align=True)
         row.operator("rt.sync_texture_names", text="同步选中模型纹理命名", icon='FILE_REFRESH')
         
+        # 添加一键标注和清理标注按钮
+        row = char_box.row(align=True)
+        row.operator("rt.create_annotations", text="一键标注", icon='TEXT')
+        row.operator("rt.clear_annotations", text="清理标注", icon='TRASH')
+        
         # 添加动物重命名部分
         layout.separator()
         animal_box = layout.box()
@@ -863,6 +977,8 @@ classes = [
     RT_OT_RenameCharacterHair,
     RT_OT_OrganizeSelectedMaterials,
     RT_OT_CheckUVs,
+    RT_OT_CreateAnnotations,
+    RT_OT_ClearAnnotations,
     RT_PT_TextureRenamerPanel,
     RT_PT_3DCoatPanel,
 ]
