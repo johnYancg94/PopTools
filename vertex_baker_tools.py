@@ -271,7 +271,7 @@ class VTBB_PT_MainPanel(Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'PopTools'
-    bl_order = 10
+    bl_order = 4
     
     @classmethod
     def poll(cls, context):

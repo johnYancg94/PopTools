@@ -401,6 +401,42 @@ class ReTexSettings(bpy.types.PropertyGroup):
         default="01"
     )
     
+    # 建筑重命名属性
+    building_type: EnumProperty(
+        name="建筑类型",
+        description="选择建筑类型",
+        items=[
+            ('buildpart', '静态建筑', '静态建筑'),
+            ('anibuild', '动画建筑', '动画建筑')
+        ],
+        default='buildpart'
+    )
+    
+    building_island_name: StringProperty(
+        name="海岛名",
+        description="输入海岛名称",
+        default=""
+    )
+    
+    building_name: StringProperty(
+        name="建筑名",
+        description="输入建筑名称",
+        default=""
+    )
+    
+    building_serial_number: EnumProperty(
+        name="序号",
+        description="选择建筑序号",
+        items=[
+            ('01', '01', '序号01'),
+            ('02', '02', '序号02'),
+            ('03', '03', '序号03'),
+            ('04', '04', '序号04'),
+            ('05', '05', '序号05')
+        ],
+        default='01'
+    )
+    
     # UV检查相关属性
     uv_check_triggered: BoolProperty(
         name="UV检查已触发",

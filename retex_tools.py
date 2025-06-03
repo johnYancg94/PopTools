@@ -573,6 +573,268 @@ class RT_OT_RenameCharacterHair(Operator):
             show_message_box("没有符合条件的模型被重命名", "重命名完成", 'INFO')
         return {'FINISHED'}
 
+class RT_OT_RenameBuildingObjects(Operator):
+    """建筑重命名 / Rename Building Objects"""
+    bl_idname = "rt.rename_building_objects"
+    bl_label = "建筑重命名"
+    bl_description = "使用建筑命名规则重命名选定的对象"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        selected_objects = bpy.context.selected_objects
+        props = context.scene.poptools.retex_settings
+        
+        # 获取用户输入
+        building_type = props.building_type
+        island_name = props.building_island_name.strip()
+        building_name = props.building_name.strip()
+        serial_number = props.building_serial_number
+        
+        # 验证输入
+        if not island_name:
+            show_message_box("请输入海岛名称", "输入错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        if not building_name:
+            show_message_box("请输入建筑名称", "输入错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        if not selected_objects:
+            show_message_box("请先选择要重命名的对象", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        total_renamed = 0
+        errors = []
+        
+        for obj in selected_objects:
+            if obj.type != 'MESH':
+                errors.append(f"对象 '{obj.name}' 不是网格对象，跳过")
+                continue
+            
+            # 生成新名称：mesh_[建筑类型]_[海岛名]_[建筑名][序号]
+            new_name = f"mesh_{building_type}_{island_name}_{building_name}{serial_number}"
+            
+            # 检查新名称是否已存在
+            if new_name in bpy.data.objects:
+                errors.append(f"对象 '{obj.name}' 重命名失败：名称 '{new_name}' 已存在")
+                continue
+            
+            try:
+                # 重命名对象
+                old_name = obj.name
+                obj.name = new_name
+                
+                # 同时重命名对象数据（网格数据）
+                if obj.data:
+                    obj.data.name = new_name
+                
+                total_renamed += 1
+                
+            except Exception as e:
+                errors.append(f"对象 '{obj.name}' 重命名失败：{str(e)}")
+        
+        # 显示结果
+        if total_renamed > 0:
+            message = f"成功重命名 {total_renamed} 个建筑对象"
+            if errors:
+                message += f"\n\n警告：\n" + "\n".join(errors)
+            show_message_box(message, "重命名完成", 'INFO')
+        else:
+            message = "没有对象被重命名"
+            if errors:
+                message += f"\n\n错误：\n" + "\n".join(errors)
+            show_message_box(message, "重命名失败", 'ERROR')
+        
+        return {'FINISHED'}
+
+class RT_OT_SetBuildingType(Operator):
+    """设置建筑类型 / Set Building Type"""
+    bl_idname = "rt.set_building_type"
+    bl_label = "设置建筑类型"
+    bl_description = "设置当前选择的建筑类型"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    building_type: StringProperty(
+        name="建筑类型",
+        description="要设置的建筑类型",
+        default="buildpart"
+    )
+    
+    def execute(self, context):
+        props = context.scene.poptools.retex_settings
+        props.building_type = self.building_type
+        return {'FINISHED'}
+
+class RT_OT_SetBuildingSerial(Operator):
+    """设置建筑序号 / Set Building Serial Number"""
+    bl_idname = "rt.set_building_serial"
+    bl_label = "设置建筑序号"
+    bl_description = "设置当前选择的建筑序号"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    serial_number: StringProperty(
+        name="序号",
+        description="要设置的序号",
+        default="01"
+    )
+    
+    def execute(self, context):
+        props = context.scene.poptools.retex_settings
+        props.building_serial_number = self.serial_number
+        return {'FINISHED'}
+
+class RT_OT_AutoNameBakeModels(Operator):
+    """烘焙高低模自动命名 / Auto Name Bake Models"""
+    bl_idname = "rt.auto_name_bake_models"
+    bl_label = "烘焙高低模自动命名"
+    bl_description = "自动识别高低模并按烘焙命名规则重命名"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def get_face_count(self, obj):
+        """获取对象的面数"""
+        if obj.type == 'MESH' and obj.data:
+            return len(obj.data.polygons)
+        return 0
+    
+    def has_subdivision_modifier(self, obj):
+        """检查对象是否有细分修改器"""
+        if obj.modifiers:
+            for modifier in obj.modifiers:
+                if modifier.type == 'SUBSURF':
+                    return True
+        return False
+    
+    def classify_models(self, objects):
+        """分类高模和低模"""
+        if not objects:
+            return [], []
+        
+        # 计算所有对象的面数
+        face_counts = [(obj, self.get_face_count(obj)) for obj in objects if obj.type == 'MESH']
+        
+        if not face_counts:
+            return [], []
+        
+        # 计算平均面数作为分界线
+        total_faces = sum(count for _, count in face_counts)
+        avg_faces = total_faces / len(face_counts)
+        
+        high_poly = []
+        low_poly = []
+        
+        for obj, face_count in face_counts:
+            # 判断高模条件：面数高于平均值或有细分修改器
+            if face_count > avg_faces or self.has_subdivision_modifier(obj):
+                high_poly.append(obj)
+            else:
+                low_poly.append(obj)
+        
+        return high_poly, low_poly
+    
+    def get_next_bake_number(self):
+        """获取下一个可用的Bake编号"""
+        existing_names = [obj.name for obj in bpy.data.objects]
+        bake_num = 1
+        
+        while True:
+            bake_prefix = f"Bake{bake_num:02d}"
+            # 检查是否存在以此前缀开头的对象
+            if not any(name.startswith(bake_prefix) for name in existing_names):
+                return bake_num
+            bake_num += 1
+    
+    def execute(self, context):
+        selected_objects = bpy.context.selected_objects
+        
+        if not selected_objects:
+            show_message_box("请先选择要重命名的对象", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 过滤出网格对象
+        mesh_objects = [obj for obj in selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            show_message_box("请选择至少一个网格对象", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 分类高模和低模
+        high_poly, low_poly = self.classify_models(mesh_objects)
+        
+        if not high_poly and not low_poly:
+            show_message_box("无法识别高模或低模", "错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 获取Bake编号
+        bake_num = self.get_next_bake_number()
+        bake_prefix = f"Bake{bake_num:02d}"
+        
+        total_renamed = 0
+        errors = []
+        
+        # 重命名高模
+        if high_poly:
+            if len(high_poly) == 1 and len(low_poly) == 1:
+                # 简单情况：一个高模一个低模
+                new_name = f"{bake_prefix}_high"
+                try:
+                    high_poly[0].name = new_name
+                    if high_poly[0].data:
+                        high_poly[0].data.name = new_name
+                    total_renamed += 1
+                except Exception as e:
+                    errors.append(f"高模重命名失败：{str(e)}")
+            else:
+                # 复杂情况：多个高模
+                for i, obj in enumerate(high_poly):
+                    suffix = chr(ord('a') + i)  # a, b, c, ...
+                    new_name = f"{bake_prefix}_high_{suffix}"
+                    try:
+                        obj.name = new_name
+                        if obj.data:
+                            obj.data.name = new_name
+                        total_renamed += 1
+                    except Exception as e:
+                        errors.append(f"高模 {obj.name} 重命名失败：{str(e)}")
+        
+        # 重命名低模
+        if low_poly:
+            if len(high_poly) == 1 and len(low_poly) == 1:
+                # 简单情况：一个高模一个低模
+                new_name = f"{bake_prefix}_low"
+                try:
+                    low_poly[0].name = new_name
+                    if low_poly[0].data:
+                        low_poly[0].data.name = new_name
+                    total_renamed += 1
+                except Exception as e:
+                    errors.append(f"低模重命名失败：{str(e)}")
+            else:
+                # 复杂情况：多个低模
+                for i, obj in enumerate(low_poly):
+                    suffix = chr(ord('a') + i)  # a, b, c, ...
+                    new_name = f"{bake_prefix}_low_{suffix}"
+                    try:
+                        obj.name = new_name
+                        if obj.data:
+                            obj.data.name = new_name
+                        total_renamed += 1
+                    except Exception as e:
+                        errors.append(f"低模 {obj.name} 重命名失败：{str(e)}")
+        
+        # 显示结果
+        if total_renamed > 0:
+            message = f"成功重命名 {total_renamed} 个模型\n高模: {len(high_poly)} 个\n低模: {len(low_poly)} 个\n使用编号: {bake_prefix}"
+            if errors:
+                message += f"\n\n警告：\n" + "\n".join(errors)
+            show_message_box(message, "重命名完成", 'INFO')
+        else:
+            message = "没有对象被重命名"
+            if errors:
+                message += f"\n\n错误：\n" + "\n".join(errors)
+            show_message_box(message, "重命名失败", 'ERROR')
+        
+        return {'FINISHED'}
+
 class RT_OT_OrganizeSelectedMaterials(Operator):
     """一键整理选中模型材质 / Organize Selected Materials"""
     bl_idname = "rt.organize_selected_materials"
@@ -904,6 +1166,50 @@ class RT_PT_TextureRenamerPanel(Panel):
         
         row = animal_box.row(align=True)
         row.operator("rt.rename_animal", text="命名选中动物")
+        
+        # 添加建筑重命名部分
+        layout.separator()
+        building_box = layout.box()
+        building_box.label(text="建筑重命名：")
+        
+        # 建筑类型按钮组
+        type_row = building_box.row(align=True)
+        # 静态建筑按钮
+        op_static = type_row.operator("rt.set_building_type", text="静态建筑", depress=(props.building_type == 'buildpart'))
+        op_static.building_type = 'buildpart'
+        # 动画建筑按钮
+        op_anim = type_row.operator("rt.set_building_type", text="动画建筑", depress=(props.building_type == 'anibuild'))
+        op_anim.building_type = 'anibuild'
+        
+        # 海岛名输入框
+        row = building_box.row(align=True)
+        split = row.split(factor=0.3)
+        split.label(text="海岛名:")
+        split.prop(props, "building_island_name", text="")
+        
+        # 建筑名输入框
+        row = building_box.row(align=True)
+        split = row.split(factor=0.3)
+        split.label(text="建筑名:")
+        split.prop(props, "building_name", text="")
+        
+        # 序号按钮组
+        serial_row = building_box.row(align=True)
+        # 序号01-05按钮
+        for i in range(1, 6):
+            serial_num = f"{i:02d}"
+            op_serial = serial_row.operator("rt.set_building_serial", text=serial_num, depress=(props.building_serial_number == serial_num))
+            op_serial.serial_number = serial_num
+        
+        # 重命名按钮
+        row = building_box.row(align=True)
+        row.operator("rt.rename_building_objects", text="重命名选中建筑", icon='HOME')
+        
+        # 烘焙高低模自动命名
+        row = building_box.row(align=True)
+        row.separator()
+        row = building_box.row(align=True)
+        row.operator("rt.auto_name_bake_models", text="烘焙高低模自动命名", icon='MESH_DATA')
 
 class RT_PT_3DCoatPanel(Panel):
     """导出3DCoat前整理面板 / 3DCoat Export Preparation Panel"""
@@ -975,6 +1281,10 @@ classes = [
     RT_OT_RenameAnimal,
     RT_OT_SyncTextureNames,
     RT_OT_RenameCharacterHair,
+    RT_OT_RenameBuildingObjects,
+    RT_OT_SetBuildingType,
+    RT_OT_SetBuildingSerial,
+    RT_OT_AutoNameBakeModels,
     RT_OT_OrganizeSelectedMaterials,
     RT_OT_CheckUVs,
     RT_OT_CreateAnnotations,

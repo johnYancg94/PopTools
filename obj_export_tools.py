@@ -403,7 +403,7 @@ class OBJ_PT_export_panel(Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "PopTools"
-    bl_order = 4
+    bl_order = 3
 
     @classmethod
     def poll(cls, context):
