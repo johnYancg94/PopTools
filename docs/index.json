@@ -1,0 +1,38 @@
+{
+  "version": "v1",
+  "blocklist": [],
+  "data": [
+    {
+      "schema_version": "1.0.0",
+      "id": "poptools",
+      "name": "PopTools - 蜂鸟工具箱",
+      "tagline": "专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理",
+      "version": "3.1.1",
+      "type": "add-on",
+      "maintainer": "johnYancg94",
+      "license": [
+        "SPDX:GPL-3.0-or-later"
+      ],
+      "blender_version_min": "4.2.0",
+      "website": "https://github.com/johnYancg94/PopTools",
+      "permissions": {
+        "files": "Export FBX/OBJ/GLTF files to disk, manage texture files and batch operations",
+        "network": "Access online documentation and check for updates"
+      },
+      "tags": [
+        "3D View",
+        "Object",
+        "UV",
+        "Mesh",
+        "Import-Export",
+        "Modeling",
+        "Game Development",
+        "Texture",
+        "Animation"
+      ],
+      "archive_url": "./PopTools.zip",
+      "archive_size": 165617,
+      "archive_hash": "sha256:b2b285d92645f1bd0689490bda61170ce85c266e67f0f5c3c16c5c897846acbd"
+    }
+  ]
+}
