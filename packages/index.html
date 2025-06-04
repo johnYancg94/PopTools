@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PopTools 扩展仓库</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2980b9;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .extension-card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .extension-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .extension-title {
+            margin: 0;
+            color: #2c3e50;
+        }
+        .extension-version {
+            background-color: #3498db;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        .extension-tagline {
+            color: #7f8c8d;
+            font-style: italic;
+            margin-bottom: 15px;
+        }
+        .extension-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .meta-item {
+            background-color: #f1f1f1;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .download-btn {
+            display: inline-block;
+            background-color: #2ecc71;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        .download-btn:hover {
+            background-color: #27ae60;
+        }
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 15px;
+        }
+        .tag {
+            background-color: #e0f7fa;
+            color: #00838f;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .instructions {
+            background-color: #fffde7;
+            border-left: 4px solid #ffd600;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>PopTools 扩展仓库</h1>
+    
+    <div class="instructions">
+        <h3>如何在Blender中添加此仓库</h3>
+        <ol>
+            <li>打开 Blender → 偏好设置 → 获取扩展 → 仓库</li>
+            <li>点击 "+" → 添加远程仓库</li>
+            <li>设置URL为: <code>https://你的用户名.github.io/你的仓库名/index.json</code></li>
+            <li>启用"启动时检查更新"</li>
+        </ol>
+    </div>
+
+    <div class="extension-card">
+        <div class="extension-header">
+            <h2 class="extension-title">PopTools - 游戏资产制作工具集</h2>
+            <span class="extension-version">v3.1.1</span>
+        </div>
+        <p class="extension-tagline">专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理</p>
+        
+        <div class="extension-meta">
+            <span class="meta-item">类型: 插件</span>
+            <span class="meta-item">最低Blender版本: 4.2.0</span>
+            <span class="meta-item">许可证: GPL-3.0-or-later</span>
+        </div>
+        
+        <a href="PopTools.zip?repository=./index.json&blender_version_min=4.2.0" class="download-btn">下载并安装</a>
+        
+        <div class="tag-list">
+            <span class="tag">3D View</span>
+            <span class="tag">Object</span>
+            <span class="tag">UV</span>
+            <span class="tag">Mesh</span>
+            <span class="tag">Import-Export</span>
+            <span class="tag">Modeling</span>
+            <span class="tag">Game Development</span>
+            <span class="tag">Texture</span>
+            <span class="tag">Animation</span>
+        </div>
+    </div>
+</body>
+</html>

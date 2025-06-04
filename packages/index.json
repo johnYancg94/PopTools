@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "extensions": [
+    {
+      "id": "poptools",
+      "name": "PopTools - 游戏资产制作工具集",
+      "tagline": "专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理",
+      "version": "3.1.1",
+      "type": "add-on",
+      "blender_version_min": "4.2.0",
+      "license": ["SPDX:GPL-3.0-or-later"],
+      "download_url": "PopTools.zip",
+      "website": "https://github.com/johnYancg94/PopTools",
+      "tags": ["3D View", "Object", "UV", "Mesh", "Import-Export", "Modeling", "Game Development", "Texture", "Animation"]
+    }
+  ]
+}
