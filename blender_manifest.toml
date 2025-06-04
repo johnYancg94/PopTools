@@ -16,16 +16,3 @@ blender_version_min = "4.2.0"
 license = [
   "SPDX:GPL-3.0-or-later",
 ]
-
-[permissions]
-files = "Export FBX/OBJ/GLTF files to disk, manage texture files and batch operations"
-network = "Access online documentation and check for updates"
-
-[build]
-exclude = [
-  "__pycache__/",
-  "*.pyc",
-  ".git/",
-  ".gitignore",
-  "*.zip"
-]
