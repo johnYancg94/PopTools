@@ -219,13 +219,30 @@ def export_object(obj, file_path, scene_props):
     
     with temp_selection_context(bpy.context, active_object=obj, selected_objects=[obj]):
         try:
+            # 坐标轴映射：将用户界面的值转换为API需要的枚举值
+            axis_mapping = {
+                'X': 'X',
+                'Y': 'Y', 
+                'Z': 'Z',
+                '-X': 'NEGATIVE_X',
+                '-Y': 'NEGATIVE_Y',
+                '-Z': 'NEGATIVE_Z'
+            }
+            
+            forward_axis_value = getattr(scene_props, 'obj_export_coord_forward', 'Z')
+            up_axis_value = getattr(scene_props, 'obj_export_coord_up', 'Y')
+            
+            # 转换为API需要的枚举值
+            forward_axis_enum = axis_mapping.get(forward_axis_value, 'NEGATIVE_Z')
+            up_axis_enum = axis_mapping.get(up_axis_value, 'Y')
+            
             # 导出OBJ格式
             bpy.ops.wm.obj_export(
                 filepath=export_filepath,
                 export_selected_objects=True,
                 global_scale=getattr(scene_props, 'obj_export_scale', 1.0),
-                forward_axis=getattr(scene_props, 'obj_export_coord_forward', 'Z'),
-                up_axis=getattr(scene_props, 'obj_export_coord_up', 'Y'),
+                forward_axis=forward_axis_enum,
+                up_axis=up_axis_enum,
                 export_materials=getattr(scene_props, 'obj_export_materials', True),
                 path_mode="COPY",
                 export_normals=True,

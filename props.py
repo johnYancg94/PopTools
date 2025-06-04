@@ -491,14 +491,14 @@ class ObjExportSettings(bpy.types.PropertyGroup):
             ("X", "X", ""), ("Y", "Y", ""), ("Z", "Z", ""),
             ("-X", "-X", ""), ("-Y", "-Y", ""), ("-Z", "-Z", "")
         ],
-        default="Z"
+        default="-Z"
     )
     
     # 材质导出
     obj_export_materials: BoolProperty(
         name="导出材质",
         description="是否导出材质信息",
-        default=True
+        default=False
     )
     
     # 三角化设置
