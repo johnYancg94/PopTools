@@ -87,22 +87,6 @@ class PopToolsPreferences(AddonPreferences):
         col.prop(self, "default_export_path")
         col.prop(self, "auto_save_before_export")
         col.prop(self, "show_export_notifications")
-        
-        # UI settings section
-        box = layout.box()
-        box.label(text="界面设置:", icon='PREFERENCES')
-        
-        col = box.column()
-        col.prop(self, "panel_location")
-        col.prop(self, "compact_ui")
-        
-        # Info section
-        box = layout.box()
-        box.label(text="关于:", icon='INFO')
-        col = box.column()
-        col.label(text="PopTools - Blender工具集合")
-        col.label(text="版本: 3.0.0")
-        col.label(text="作者: JhonYan & Claude & Gemini")
 
 # Registration
 classes = (

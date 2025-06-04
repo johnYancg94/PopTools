@@ -7,7 +7,7 @@ from bpy.props import PointerProperty
 # 插件信息 / Addon Information
 bl_info = {
     "name": "PopTools",
-    "author": "PopTools Team",
+    "author": "jhonyan & Claude",
     "version": (3, 1, 1),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > PopTools",
