@@ -1,0 +1,31 @@
+schema_version = "1.0.0"
+
+id = "poptools"
+version = "3.1.1"
+name = "PopTools - 游戏资产制作工具集"
+tagline = "专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理"
+maintainer = "PopTools Team <poptools@example.com>"
+type = "add-on"
+
+website = "https://github.com/johnYancg94/PopTools"
+
+tags = ["3D View", "Object", "UV", "Mesh", "Import-Export", "Modeling", "Game Development", "Texture", "Animation"]
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+files = "Export FBX/OBJ/GLTF files to disk, manage texture files and batch operations"
+network = "Access online documentation and check for updates"
+
+[build]
+exclude = [
+  "__pycache__/",
+  "*.pyc",
+  ".git/",
+  ".gitignore",
+  "*.zip"
+]
