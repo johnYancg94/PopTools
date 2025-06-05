@@ -6,6 +6,8 @@ PopTools Utils
 
 import bpy
 import os
+import sys
+import subprocess
 import bmesh
 import re
 from datetime import datetime
@@ -28,6 +30,18 @@ def ensure_directory_exists(path):
         os.makedirs(path)
         return True
     return False
+
+def open_directory(path):
+    """在操作系统中打开目录"""
+    try:
+        if sys.platform.startswith('win'):
+            os.startfile(path)
+        elif sys.platform == 'darwin':
+            subprocess.Popen(['open', path])
+        else:
+            subprocess.Popen(['xdg-open', path])
+    except Exception as e:
+        print(f"Failed to open directory {path}: {e}")
 
 def get_safe_filename(filename):
     """获取安全的文件名（移除非法字符）"""
