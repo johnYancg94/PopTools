@@ -1,5 +1,6 @@
 import bpy
 import os
+import sys
 import subprocess
 import math
 from . import utils
@@ -575,9 +576,9 @@ class OpenExportDir(bpy.types.Operator):
 		# Try open export dir in OS
 		if len(act.export_dir) > 0:
 			try:
-				os.startfile(act.export_dir)
-			except:
-				subprocess.Popen(['xdg-open', act.export_dir])
+				utils.open_directory(act.export_dir)
+			except Exception as e:
+				print(f"Failed to open export directory: {e}")
 		else:
 			utils.show_message_box('Export FBX\'s before',
 								   'Info')
