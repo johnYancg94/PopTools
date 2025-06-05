@@ -1,56 +1,101 @@
-<\!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PopTools - 蜂鸟工具箱 - Blender扩展仓库</title>
+    <title>PopTools - 蜂鸟工具箱 - Blender扩展</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #007acc; padding-bottom: 10px; }
-        .extension { border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 8px; background: #fafafa; }
-        .extension h2 { color: #007acc; margin-top: 0; }
-        .info { margin: 10px 0; }
-        .label { font-weight: bold; color: #555; }
-        .download { background: #007acc; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 15px; }
-        .download:hover { background: #005a9e; }
-        .tags { margin: 10px 0; }
-        .tag { background: #e1f5fe; color: #0277bd; padding: 3px 8px; border-radius: 3px; margin-right: 5px; font-size: 12px; }
-        .changelog { margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px; }
-        .changelog h3 { color: #007acc; margin-top: 0; }
-        .changelog ul { margin: 10px 0; padding-left: 20px; }
-        .changelog li { margin: 5px 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+        }
+        .version {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }
+        .download-btn {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .download-btn:hover {
+            background: #218838;
+        }
+        .changelog {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .meta {
+            color: #666;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>PopTools - 蜂鸟工具箱 - Blender扩展仓库</h1>
-        <div class="extension">
-            <h2>PopTools - 蜂鸟工具箱 - 专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理</h2>
-            <div class="info"><span class="label">版本:</span> 3.1.2</div>
-            <div class="info"><span class="label">类型:</span> add-on</div>
-            <div class="info"><span class="label">维护者:</span> johnYancg94</div>
-            <div class="info"><span class="label">最低Blender版本:</span> 4.2.0</div>
-            <div class="tags">
-                <span class="label">标签:</span>
-                <span class="tag">3D View</span> <span class="tag">Object</span> <span class="tag">UV</span> <span class="tag">Mesh</span> <span class="tag">Import-Export</span> <span class="tag">Modeling</span> <span class="tag">Game Development</span> <span class="tag">Texture</span> <span class="tag">Animation</span>
-            </div>
-            <a href="./PopTools.zip" class="download">下载 PopTools.zip (39 KB)</a>
-            <div class="changelog">
-                <h3>最新更新 (v3.1.2)</h3>
-                <ul>
-                    <li><strong>功能改进</strong>: 优化建筑重命名功能，实现自动递增序号，从01开始自动排序</li>
-                    <li><strong>界面简化</strong>: 移除手动序号选择控件，提升操作效率</li>
-                    <li><strong>智能命名</strong>: 当检测到重复名称时自动跳过并递增到下一个可用序号</li>
-                </ul>
-            </div>
-            <div class="info" style="margin-top: 15px; font-size: 12px; color: #666;">
-                更新时间: 2025-06-05 15:07:46
-            </div>
-            <div class="info" style="font-size: 12px; color: #666;">
-                <a href="https://github.com/johnYancg94/PopTools" target="_blank">GitHub仓库</a>
-            </div>
+    <div class="header">
+        <h1>PopTools - 蜂鸟工具箱</h1>
+        <p>专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理</p>
+        <p class="meta">版本 1.0.0 | 维护者: johnYancg94</p>
+    </div>
+    
+    <div class="version">
+        <h2>📦 下载安装</h2>
+        <p><strong>当前版本:</strong> 1.0.0</p>
+        <p><strong>支持Blender:</strong> 4.2.0+</p>
+        <a href="./PopTools.zip" class="download-btn">下载 PopTools.zip</a>
+        <p class="meta">文件大小: 44192 bytes | SHA256: 3d8ada90fe530ac8...</p>
+    </div>
+    
+    <div class="changelog">
+        <h2>🚀 版本 1.0.0 更新内容</h2>
+        <div>
+            <p>- **智能识别优化**: 海岛配方道具智能重命名功能支持更灵活的内容识别</p>
+            <p>- **命名格式改进**: 支持数字在字母前面的命名格式（如"1b"、"3_balloon"等）</p>
+            <p>- **前缀统一**: 所有重命名的道具自动添加"mesh_item_"前缀，规范化命名</p>
+            <p>- **兼容性增强**: 保持对原有字母在前格式的完全兼容（如"b1"、"balloon_3"等）</p>
         </div>
     </div>
+    
+    <div class="changelog">
+        <h2>📋 安装说明</h2>
+        <ol>
+            <li>下载上方的 PopTools.zip 文件</li>
+            <li>在Blender中进入 编辑 > 偏好设置 > 扩展</li>
+            <li>点击右上角的下拉菜单，选择"从磁盘安装"</li>
+            <li>选择下载的zip文件进行安装</li>
+            <li>启用插件并保存偏好设置</li>
+        </ol>
+    </div>
+    
+    <div class="changelog">
+        <h2>🔗 相关链接</h2>
+        <p><a href="https://github.com/johnYancg94/PopTools">GitHub仓库</a> | <a href="./index.json">扩展信息(JSON)</a></p>
+    </div>
+    
+    <footer style="text-align: center; margin-top: 40px; color: #666;">
+        <p>© 2025 johnYancg94. 最后更新: 2025-06-05 16:11:14</p>
+    </footer>
 </body>
 </html>

@@ -1,10 +1,16 @@
-# PopTools 3.1.1 - Blender - 蜂鸟游戏资产制作工具集
+# PopTools - Blender - 蜂鸟游戏资产制作工具集
 
 ![Blender Version](https://img.shields.io/badge/Blender-4.2+-blue.svg)
 ![Python Version](https://img.shields.io/badge/Python-3.11+-green.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ## 版本更新日志 / Version Changelog
+
+### 3.1.3 (2025)
+- **智能识别优化**: 海岛配方道具智能重命名功能支持更灵活的内容识别
+- **命名格式改进**: 支持数字在字母前面的命名格式（如"1b"、"3_balloon"等）
+- **前缀统一**: 所有重命名的道具自动添加"mesh_item_"前缀，规范化命名
+- **兼容性增强**: 保持对原有字母在前格式的完全兼容（如"b1"、"balloon_3"等）
 
 ### 3.1.2 (2025)
 - **功能改进**: 优化建筑重命名功能，实现自动递增序号，从01开始自动排序

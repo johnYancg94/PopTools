@@ -29,7 +29,7 @@ class RT_OT_ShowSmartRenameHelp(Operator):
     1. 命名前标注:
        - b1,b2... 为气球
        - h1,h2... 为手持
-       以此内推
+       以此类推
        
     2. 同一个海岛的序号不能重复
        正确排序方式如: b1,h2,h3,p4
@@ -71,17 +71,27 @@ class RT_OT_SmartRenameObjects(Operator):
         for obj in selected_objects:
             old_name = obj.name
             
-            # 使用正则表达式匹配模式：字母+数字
-            match = re.match(r'^([a-zA-Z]+)(\d+)$', old_name)
+            # 使用更智能的正则表达式匹配模式：提取任何包含字母和数字的关键参数
+            # 支持字母+数字或数字+字母的灵活格式
+            match_letter_first = re.search(r'([a-zA-Z]+).*?(\d+)', old_name)
+            match_number_first = re.search(r'(\d+).*?([a-zA-Z]+)', old_name)
             
-            if match:
-                type_prefix = match.group(1).lower()
-                number = match.group(2)
+            type_prefix = None
+            number = None
+            
+            if match_letter_first:
+                type_prefix = match_letter_first.group(1).lower()
+                number = match_letter_first.group(2)
+            elif match_number_first:
+                type_prefix = match_number_first.group(2).lower()
+                number = match_number_first.group(1)
+            
+            if type_prefix and number:
                 
                 # 检查是否为已知类型
                 if type_prefix in type_mapping:
                     type_name = type_mapping[type_prefix]
-                    new_name = f"{item_land}_{type_name}_{number:0>2}"
+                    new_name = f"mesh_item_{item_land}_{type_name}_{number:0>2}"
                     
                     # 检查新名称是否已存在
                     if new_name in bpy.data.objects:
@@ -93,7 +103,7 @@ class RT_OT_SmartRenameObjects(Operator):
                 else:
                     errors.append(f"对象 '{old_name}' 重命名失败：未知类型前缀 '{type_prefix}'")
             else:
-                errors.append(f"对象 '{old_name}' 重命名失败：名称格式不正确（应为字母+数字）")
+                errors.append(f"对象 '{old_name}' 重命名失败：名称中未找到有效的字母和数字组合")
         
         # 显示结果
         if total_renamed > 0:
