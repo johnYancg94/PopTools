@@ -588,7 +588,6 @@ class RT_OT_RenameBuildingObjects(Operator):
         building_type = props.building_type
         island_name = props.building_island_name.strip()
         building_name = props.building_name.strip()
-        serial_number = props.building_serial_number
         
         # 验证输入
         if not island_name:
@@ -603,21 +602,32 @@ class RT_OT_RenameBuildingObjects(Operator):
             show_message_box("请先选择要重命名的对象", "警告", 'ERROR')
             return {'CANCELLED'}
         
+        # 过滤出网格对象
+        mesh_objects = [obj for obj in selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            show_message_box("选中的对象中没有网格对象", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
         total_renamed = 0
         errors = []
         
-        for obj in selected_objects:
-            if obj.type != 'MESH':
-                errors.append(f"对象 '{obj.name}' 不是网格对象，跳过")
-                continue
+        # 自动递增序号，从01开始
+        serial_number = 1
+        
+        for obj in mesh_objects:
+            # 生成基础名称模板
+            base_name = f"mesh_{building_type}_{island_name}_{building_name}"
             
-            # 生成新名称：mesh_[建筑类型]_[海岛名]_[建筑名][序号]
-            new_name = f"mesh_{building_type}_{island_name}_{building_name}{serial_number}"
-            
-            # 检查新名称是否已存在
-            if new_name in bpy.data.objects:
-                errors.append(f"对象 '{obj.name}' 重命名失败：名称 '{new_name}' 已存在")
-                continue
+            # 查找可用的序号
+            while True:
+                serial_str = f"{serial_number:02d}"  # 格式化为两位数字，如01, 02
+                new_name = f"{base_name}{serial_str}"
+                
+                # 检查新名称是否已存在
+                if new_name not in bpy.data.objects:
+                    break
+                serial_number += 1
             
             try:
                 # 重命名对象
@@ -629,9 +639,11 @@ class RT_OT_RenameBuildingObjects(Operator):
                     obj.data.name = new_name
                 
                 total_renamed += 1
+                serial_number += 1  # 为下一个对象准备序号
                 
             except Exception as e:
                 errors.append(f"对象 '{obj.name}' 重命名失败：{str(e)}")
+                serial_number += 1  # 即使失败也要递增序号
         
         # 显示结果
         if total_renamed > 0:
@@ -665,23 +677,7 @@ class RT_OT_SetBuildingType(Operator):
         props.building_type = self.building_type
         return {'FINISHED'}
 
-class RT_OT_SetBuildingSerial(Operator):
-    """设置建筑序号 / Set Building Serial Number"""
-    bl_idname = "rt.set_building_serial"
-    bl_label = "设置建筑序号"
-    bl_description = "设置当前选择的建筑序号"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    serial_number: StringProperty(
-        name="序号",
-        description="要设置的序号",
-        default="01"
-    )
-    
-    def execute(self, context):
-        props = context.scene.poptools.retex_settings
-        props.building_serial_number = self.serial_number
-        return {'FINISHED'}
+# 移除RT_OT_SetBuildingSerial类，序号现在自动递增
 
 class RT_OT_AutoNameBakeModels(Operator):
     """烘焙高低模自动命名 / Auto Name Bake Models"""
@@ -1128,8 +1124,8 @@ class RT_PT_TextureRenamerPanel(Panel):
         split.prop(props, "character_suffix", text="")
         
         row = char_box.row(align=True)
-        row.operator("rt.rename_character_body", text="命名选中体型")
-        row.operator("rt.rename_character_hair", text="命名选中发型")
+        row.operator("rt.rename_character_body", text="命名选中体型", icon='OBJECT_DATA')
+        row.operator("rt.rename_character_hair", text="命名选中发型", icon='OBJECT_DATA')
         
         # 添加同步纹理命名按钮
         row = char_box.row(align=True)
@@ -1165,7 +1161,7 @@ class RT_PT_TextureRenamerPanel(Panel):
         op_increase.min_value = 1
         
         row = animal_box.row(align=True)
-        row.operator("rt.rename_animal", text="命名选中动物")
+        row.operator("rt.rename_animal", text="命名选中动物", icon='OBJECT_DATA')
         
         # 添加建筑重命名部分
         layout.separator()
@@ -1193,17 +1189,11 @@ class RT_PT_TextureRenamerPanel(Panel):
         split.label(text="建筑名:")
         split.prop(props, "building_name", text="")
         
-        # 序号按钮组
-        serial_row = building_box.row(align=True)
-        # 序号01-05按钮
-        for i in range(1, 6):
-            serial_num = f"{i:02d}"
-            op_serial = serial_row.operator("rt.set_building_serial", text=serial_num, depress=(props.building_serial_number == serial_num))
-            op_serial.serial_number = serial_num
+        # 序号现在自动递增，无需手动选择
         
         # 重命名按钮
         row = building_box.row(align=True)
-        row.operator("rt.rename_building_objects", text="重命名选中建筑", icon='HOME')
+        row.operator("rt.rename_building_objects", text="自动重命名选中建筑", icon='HOME')
         
         # 烘焙高低模自动命名
         row = building_box.row(align=True)
@@ -1283,7 +1273,7 @@ classes = [
     RT_OT_RenameCharacterHair,
     RT_OT_RenameBuildingObjects,
     RT_OT_SetBuildingType,
-    RT_OT_SetBuildingSerial,
+    # RT_OT_SetBuildingSerial 已移除，序号现在自动递增
     RT_OT_AutoNameBakeModels,
     RT_OT_OrganizeSelectedMaterials,
     RT_OT_CheckUVs,

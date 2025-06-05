@@ -424,18 +424,7 @@ class ReTexSettings(bpy.types.PropertyGroup):
         default=""
     )
     
-    building_serial_number: EnumProperty(
-        name="序号",
-        description="选择建筑序号",
-        items=[
-            ('01', '01', '序号01'),
-            ('02', '02', '序号02'),
-            ('03', '03', '序号03'),
-            ('04', '04', '序号04'),
-            ('05', '05', '序号05')
-        ],
-        default='01'
-    )
+    # 移除序号选择，改为自动递增
     
     # UV检查相关属性
     uv_check_triggered: BoolProperty(

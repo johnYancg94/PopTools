@@ -8,7 +8,7 @@ from bpy.props import PointerProperty
 bl_info = {
     "name": "PopTools",
     "author": "jhonyan & Claude",
-    "version": (3, 1, 1),
+    "version": (3, 1, 2),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > PopTools",
     "description": " 蜂鸟三消项目专用Blender工具箱 ",
