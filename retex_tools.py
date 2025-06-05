@@ -162,32 +162,120 @@ class RT_OT_ResizeTextures(Operator):
     """调整纹理大小 / Resize Textures"""
     bl_idname = "rt.resize_textures"
     bl_label = "调整纹理大小"
-    bl_description = "批量调整选中对象的纹理大小"
+    bl_description = "将选定的纹理调整为指定的分辨率并自动保存到Small文件夹"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         props = context.scene.poptools.retex_settings
-        selected_objects = context.selected_objects
+        selected_objects = bpy.context.selected_objects
+        total_resized = 0
+        total_skipped = 0
+        total_saved = 0
+        errors = []
         
         if not selected_objects:
             show_message_box("请先选择要处理的对象", "警告", 'ERROR')
             return {'CANCELLED'}
         
+        # 获取目标分辨率
         target_size = int(props.resolution_preset)
-        resized_count = 0
-        
+
+        # 处理的图像列表，用于避免重复处理同一图像
+        processed_images = set()
+
+        # 收集所有需要处理的图像
+        images_to_process = []
         for obj in selected_objects:
-            if obj.type == 'MESH' and obj.data.materials:
-                for material in obj.data.materials:
-                    if material and material.use_nodes:
-                        for node in material.node_tree.nodes:
-                            if node.type == 'TEX_IMAGE' and node.image:
-                                image = node.image
-                                if image.size[0] != target_size or image.size[1] != target_size:
-                                    image.scale(target_size, target_size)
-                                    resized_count += 1
+            if obj.material_slots:
+                material_slot = obj.material_slots[0]
+                material = material_slot.material
+                if material and material.node_tree:
+                    for node in material.node_tree.nodes:
+                        if node.type == 'TEX_IMAGE':
+                            image = node.image
+                            if image and image.name not in processed_images:
+                                # 记录已处理的图像
+                                processed_images.add(image.name)
+                                # 添加到待处理列表
+                                images_to_process.append(image)
         
-        show_message_box(f"成功调整 {resized_count} 个纹理大小到 {target_size}x{target_size}", "调整完成", 'INFO')
+        # 如果没有找到任何图像，提前返回
+        if not images_to_process:
+            show_message_box("未找到任何可处理的纹理！请确保选中的对象包含有效的纹理。", "警告", 'WARNING')
+            return {'CANCELLED'}
+        
+        # 处理每个图像
+        for image in images_to_process:
+            try:
+                # 检查图像是否有数据
+                if not image.has_data:
+                    # 尝试重新加载图像
+                    try:
+                        # 先卸载图像再重新加载
+                        image.reload()
+                    except:
+                        pass
+                    
+                    # 再次检查图像是否有数据
+                    if not image.has_data:
+                        total_skipped += 1
+                        continue
+                
+                # 调整图像分辨率
+                image.scale(target_size, target_size)
+                total_resized += 1
+                
+                # 自动保存到Small文件夹
+                try:
+                    # 获取原始图像路径
+                    original_path = bpy.path.abspath(image.filepath)
+                    if original_path:
+                        # 获取文件名和扩展名
+                        filename = os.path.basename(original_path)
+                        directory = os.path.dirname(original_path)
+                        
+                        # 获取根目录
+                        root_dir = directory
+
+                        # 创建Small文件夹（如果不存在）
+                        small_dir = os.path.join(root_dir, "Small")
+                        if not os.path.exists(small_dir):
+                            os.makedirs(small_dir)
+                        
+                        # 构建新的保存路径
+                        save_path = os.path.join(small_dir, filename)
+                        
+                        # 保存图像
+                        image.save_render(save_path)
+                        total_saved += 1
+                except Exception as e:
+                    errors.append(f"保存失败：{image.name}\n错误信息：{str(e)}")
+                
+            except Exception as e:
+                # 提供更详细的错误信息
+                error_msg = str(e)
+                if "does not have any image data" in error_msg:
+                    errors.append(f"处理失败：{image.name}\n错误信息：图像没有数据，请确保图像已正确加载。尝试在Blender中打开图像编辑器并手动加载该图像。")
+                else:
+                    errors.append(f"处理失败：{image.name}\n错误信息：{error_msg}")
+
+        # 操作完成后显示结果
+        if total_resized > 0:
+            success_msg = f"成功调整 {total_resized} 个纹理的分辨率到 {target_size}x{target_size}！"
+            if total_saved > 0:
+                success_msg += f"并保存 {total_saved} 个纹理到Small文件夹。"
+            if total_skipped > 0:
+                success_msg += f"跳过 {total_skipped} 个没有图像数据的纹理。"
+            show_message_box(success_msg, "调整完成", 'INFO')
+        elif total_skipped > 0:
+            show_message_box(f"没有纹理被调整，跳过了 {total_skipped} 个没有图像数据的纹理。", "警告", 'WARNING')
+        else:
+            show_message_box("未找到任何可处理的纹理！", "警告", 'WARNING')
+            
+        if errors:
+            error_msg = "\n".join(errors)
+            show_message_box(f"错误信息：\n{error_msg}", "处理错误", 'ERROR')
+
         return {'FINISHED'}
 
 class RT_OT_AddCustomBodyType(Operator):

@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "poptools"
-version = "3.1.3"
+version = "3.1.4"
 name = "PopTools - 蜂鸟工具箱"
 tagline = "专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理"
 maintainer = "johnYancg94"

@@ -3,99 +3,154 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PopTools - 蜂鸟工具箱 - Blender扩展</title>
+    <title>PopTools - 蜂鸟工具箱</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             line-height: 1.6;
-            color: #333;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
+            margin: 0;
             padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 10px;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
         }
         .version {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 4px solid #007bff;
+            background: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            display: inline-block;
+            margin-bottom: 20px;
+            font-weight: bold;
         }
         .download-btn {
-            display: inline-block;
-            background: #28a745;
+            background: #27ae60;
             color: white;
-            padding: 12px 24px;
+            padding: 15px 30px;
             text-decoration: none;
-            border-radius: 6px;
-            font-weight: bold;
+            border-radius: 8px;
+            display: inline-block;
             margin: 10px 0;
+            font-weight: bold;
+            transition: background 0.3s;
         }
         .download-btn:hover {
-            background: #218838;
+            background: #219a52;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .feature {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #3498db;
         }
         .changelog {
-            background: #fff;
+            background: #f8f9fa;
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            margin-top: 30px;
         }
-        .meta {
-            color: #666;
-            font-size: 0.9em;
+        .changelog h3 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .changelog ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        .changelog li {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .changelog li:before {
+            content: "✓";
+            color: #27ae60;
+            font-weight: bold;
+            margin-right: 10px;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>PopTools - 蜂鸟工具箱</h1>
-        <p>专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理</p>
-        <p class="meta">版本 3.1.3 | 维护者: johnYancg94</p>
-    </div>
-    
-    <div class="version">
-        <h2>📦 下载安装</h2>
-        <p><strong>当前版本:</strong> 3.1.3</p>
-        <p><strong>支持Blender:</strong> 4.2.0+</p>
-        <a href="./PopTools.zip" class="download-btn">下载 PopTools.zip</a>
-        <p class="meta">文件大小: 44192 bytes | SHA256: 3d8ada90fe530ac8...</p>
-    </div>
-    
-    <div class="changelog">
-        <h2>🚀 版本 3.1.3 更新内容</h2>
-        <div>
-            <p>- **智能识别优化**: 海岛配方道具智能重命名功能支持更灵活的内容识别</p>
-            <p>- **命名格式改进**: 支持数字在字母前面的命名格式（如"1b"、"3_balloon"等）</p>
-            <p>- **前缀统一**: 所有重命名的道具自动添加"mesh_item_"前缀，规范化命名</p>
-            <p>- **兼容性增强**: 保持对原有字母在前格式的完全兼容（如"b1"、"balloon_3"等）</p>
+    <div class="container">
+        <h1>🛠️ PopTools - 蜂鸟工具箱</h1>
+        
+        <div class="version">版本 3.1.4</div>
+        
+        <p><strong>专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理</strong></p>
+        
+        <a href="./PopTools.zip" class="download-btn">📦 下载插件</a>
+        <a href="https://github.com/johnYancg94/PopTools" class="download-btn" style="background: #34495e;">📚 GitHub仓库</a>
+        
+        <div class="features">
+            <div class="feature">
+                <h3>🎯 模块化设计</h3>
+                <p>各功能模块独立，可按需启用/禁用</p>
+            </div>
+            <div class="feature">
+                <h3>🚀 批量处理</h3>
+                <p>支持大量资产的批量操作和导出</p>
+            </div>
+            <div class="feature">
+                <h3>🎮 多引擎支持</h3>
+                <p>针对主流游戏引擎优化的导出预设</p>
+            </div>
+            <div class="feature">
+                <h3>🔧 智能重命名</h3>
+                <p>自动识别和重命名各类游戏资产</p>
+            </div>
+            <div class="feature">
+                <h3>📦 一键导出</h3>
+                <p>简化复杂的导出流程</p>
+            </div>
+            <div class="feature">
+                <h3>🎨 纹理管理</h3>
+                <p>智能纹理处理和批量操作</p>
+            </div>
+        </div>
+        
+        <div class="changelog">
+            <h3>📋 版本更新日志</h3>
+            
+            <h4>3.1.4 (2025)</h4>
+            <ul>
+                <li><strong>功能完善</strong>: 完整迁移老版本retex模块中的调整纹理大小功能</li>
+                <li><strong>增强错误处理</strong>: 添加图像数据检查和重新加载机制，提供详细错误信息</li>
+                <li><strong>自动保存功能</strong>: 调整后的纹理自动保存到Small文件夹，便于管理</li>
+                <li><strong>避免重复处理</strong>: 使用智能算法避免同一图像被重复处理</li>
+                <li><strong>详细统计反馈</strong>: 提供完整的操作结果统计，包括成功、跳过和错误数量</li>
+            </ul>
+            
+            <h4>3.1.3 (2025)</h4>
+            <ul>
+                <li><strong>智能识别优化</strong>: 海岛配方道具智能重命名功能支持更灵活的内容识别</li>
+                <li><strong>命名格式改进</strong>: 支持数字在字母前面的命名格式</li>
+                <li><strong>前缀统一</strong>: 所有重命名的道具自动添加"mesh_item_"前缀</li>
+                <li><strong>兼容性增强</strong>: 保持对原有字母在前格式的完全兼容</li>
+            </ul>
+        </div>
+        
+        <div style="text-align: center; margin-top: 30px; color: #7f8c8d;">
+            <p>© 2025 PopTools - 蜂鸟工具箱 | 适用于 Blender 4.2+</p>
         </div>
     </div>
-    
-    <div class="changelog">
-        <h2>📋 安装说明</h2>
-        <ol>
-            <li>下载上方的 PopTools.zip 文件</li>
-            <li>在Blender中进入 编辑 > 偏好设置 > 扩展</li>
-            <li>点击右上角的下拉菜单，选择"从磁盘安装"</li>
-            <li>选择下载的zip文件进行安装</li>
-            <li>启用插件并保存偏好设置</li>
-        </ol>
-    </div>
-    
-    <div class="changelog">
-        <h2>🔗 相关链接</h2>
-        <p><a href="https://github.com/johnYancg94/PopTools">GitHub仓库</a> | <a href="./index.json">扩展信息(JSON)</a></p>
-    </div>
-    
-    <footer style="text-align: center; margin-top: 40px; color: #666;">
-        <p>© 2025 johnYancg94. 最后更新: 2025-06-05 16:11:14</p>
-    </footer>
 </body>
 </html>
