@@ -246,7 +246,8 @@ class RT_OT_ResizeTextures(Operator):
                         save_path = os.path.join(small_dir, filename)
                         
                         # 保存图像
-                        image.save_render(save_path)
+                        image.filepath_raw = save_path
+                        image.save()
                         total_saved += 1
                 except Exception as e:
                     errors.append(f"保存失败：{image.name}\n错误信息：{str(e)}")
