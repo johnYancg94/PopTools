@@ -5,14 +5,12 @@
     {
       "schema_version": "1.0.0",
       "id": "poptools",
-      "name": "PopTools - \u8702\u9e1f\u5de5\u5177\u7bb1",
-      "tagline": "\u4e13\u4e1a\u7684Blender\u6e38\u620f\u8d44\u4ea7\u5236\u4f5c\u548c\u5bfc\u51fa\u5de5\u5177\u96c6\uff0c\u652f\u6301\u591a\u5f15\u64ce\u5bfc\u51fa\u548c\u7eb9\u7406\u7ba1\u7406",
-      "version": "3.1.4",
+      "name": "PopTools - 蜂鸟工具箱",
+      "tagline": "专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理",
+      "version": "3.3.2",
       "type": "add-on",
       "maintainer": "johnYancg94",
-      "license": [
-        "SPDX:GPL-3.0-or-later"
-      ],
+      "license": "[",
       "blender_version_min": "4.2.0",
       "website": "https://github.com/johnYancg94/PopTools",
       "tags": [
@@ -27,8 +25,8 @@
         "Animation"
       ],
       "archive_url": "./PopTools.zip",
-      "archive_size": 42226,
-      "archive_hash": "sha256:ec3b16a90d6605412f4d868a2172f4f0ba18162e2c9ccd26db17e3252de0c131"
+      "archive_size": 61174,
+      "archive_hash": "sha256:3cb00e7ae95017ef3be71e2210ca04c34a3ef579e5a73e42f537725cdbb4c2ee"
     }
   ]
 }

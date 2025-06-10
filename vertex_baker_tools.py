@@ -92,7 +92,7 @@ class VTBB_OT_BindEmptiesToVertices(Operator):
     bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
-        props = context.scene.poptools.vertex_baker_settings
+        props = context.scene.poptools_props.vertex_baker_settings
         target_mesh = props.target_mesh
         
         if not target_mesh or target_mesh.type != 'MESH':
@@ -159,7 +159,7 @@ class VTBB_OT_BakeVertexWeights(Operator):
     bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
-        props = context.scene.poptools.vertex_baker_settings
+        props = context.scene.poptools_props.vertex_baker_settings
         target_mesh = props.target_mesh
         
         if not target_mesh or target_mesh.type != 'MESH':
@@ -272,6 +272,7 @@ class VTBB_PT_MainPanel(Panel):
     bl_region_type = 'UI'
     bl_category = 'PopTools'
     bl_order = 4
+    bl_options = {'DEFAULT_CLOSED'}
     
     @classmethod
     def poll(cls, context):
@@ -280,7 +281,7 @@ class VTBB_PT_MainPanel(Panel):
     
     def draw(self, context):
         layout = self.layout
-        props = context.scene.poptools.vertex_baker_settings
+        props = context.scene.poptools_props.vertex_baker_settings
         
         # 目标网格选择
         box = layout.box()

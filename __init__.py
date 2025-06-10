@@ -8,7 +8,7 @@ from bpy.props import PointerProperty
 bl_info = {
     "name": "PopTools",
     "author": "jhonyan & Claude",
-    "version": (3, 1, 4),
+    "version": (3, 3, 2),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > PopTools",
     "description": " 蜂鸟三消项目专用Blender工具箱 ",
@@ -26,6 +26,8 @@ module_names = (
     "retex_tools",
     "obj_export_tools",
     "vertex_baker_tools",
+    "translation_tools",
+    "action_naming_tools",
 )
 
 # 存储已导入的模块 / Store imported modules
@@ -82,7 +84,7 @@ def register():
     
     # 注册主属性到场景
     if 'props' in modules:
-        bpy.types.Scene.poptools = PointerProperty(type=modules['props'].PopToolsProperties)
+        bpy.types.Scene.poptools_props = PointerProperty(type=modules['props'].PopToolsProperties)
     
     print("PopTools registered successfully!")
 
@@ -91,8 +93,8 @@ def unregister():
     print("Unregistering PopTools...")
     
     # 删除场景属性
-    if hasattr(bpy.types.Scene, 'poptools'):
-        del bpy.types.Scene.poptools
+    if hasattr(bpy.types.Scene, 'poptools_props'):
+        del bpy.types.Scene.poptools_props
     
     # 注销所有模块（逆序）
     for module_name in reversed(module_names):
