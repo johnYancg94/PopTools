@@ -13,6 +13,7 @@ from bpy.props import (
     IntProperty,
     PointerProperty
 )
+# TranslationToolsSettings在translation_tools.py中定义
 
 # Export Tools Properties
 class ExportToolsSettings(bpy.types.PropertyGroup):
@@ -51,9 +52,10 @@ class ExportToolsSettings(bpy.types.PropertyGroup):
             ('UNITY', "Unity", "Export for Unity"),
             ('UNITY2023', "Unity 2023+", "Export for Unity 2023 and newer"),
             ('UNREAL', "Unreal", "Export for Unreal Engine"),
-            ('GODOT', "Godot", "Export for Godot Engine")
+            ('GODOT', "Godot", "Export for Godot Engine"),
+            ('3DCOAT', "3DCoat", "Export for 3DCoat")
         ],
-        default='UNITY'
+        default='3DCOAT'
     )
     
     # 应用变换 / Apply Transforms
@@ -292,7 +294,7 @@ class ExportToolsSettings(bpy.types.PropertyGroup):
     )
     
     export_path: StringProperty(
-        name="导出路径 / Export Path",
+        name="",
         description="导出的自定义路径 / Custom path for export",
         default="",
         subtype='DIR_PATH'
@@ -305,11 +307,11 @@ class ExportToolsSettings(bpy.types.PropertyGroup):
     )
     
     # 调试模式 / Debug Mode (兼容性)
-    debug: BoolProperty(
-        name="调试模式 / Debug Mode",
-        description="启用调试输出 / Enable debug output",
-        default=False
-    )
+    # debug: BoolProperty(
+    #     name="调试模式 / Debug Mode", 
+    #     description="启用调试输出 / Enable debug output",
+    #     default=False
+    # )
 
 # ReTex Properties
 class ReTexSettings(bpy.types.PropertyGroup):
@@ -393,6 +395,43 @@ class ReTexSettings(bpy.types.PropertyGroup):
             ('cow', '牛羊马', '牛')
         ],
         default='bird'
+    )
+    
+    # 翻译工具属性
+    translate_input_text: StringProperty(
+        name="输入文本",
+        description="要翻译的中文文本",
+        default=""
+    )
+    
+    translate_output_text: StringProperty(
+        name="输出文本",
+        description="翻译后的英文文本",
+        default=""
+    )
+    
+    translate_source_lang: EnumProperty(
+        name="源语言",
+        description="选择源语言",
+        items=[
+            ('zh', '中文', '中文'),
+            ('en', '英文', '英文'),
+            ('ja', '日文', '日文'),
+            ('ko', '韩文', '韩文')
+        ],
+        default='zh'
+    )
+    
+    translate_target_lang: EnumProperty(
+        name="目标语言",
+        description="选择目标语言",
+        items=[
+            ('en', '英文', '英文'),
+            ('zh', '中文', '中文'),
+            ('ja', '日文', '日文'),
+            ('ko', '韩文', '韩文')
+        ],
+        default='en'
     )
     
     animal_serial_number: StringProperty(
@@ -566,6 +605,49 @@ class PopToolsProperties(bpy.types.PropertyGroup):
     
     # 顶点烘焙设置
     vertex_baker_settings: PointerProperty(type=VertexBakerSettings)
+    
+    # 翻译工具设置（在translation_tools.py中定义）
+    # translation_tools: PointerProperty(type=TranslationToolsSettings)
+    
+    # 动作命名工具属性
+    action_animation_type: StringProperty(
+        name="动画类型",
+        description="当前选择的动画类型",
+        default=""
+    )
+    
+    action_animation_name: StringProperty(
+        name="动画名称",
+        description="用户输入的动画名称",
+        default=""
+    )
+    
+    action_chinese_comment: StringProperty(
+        name="中文备注",
+        description="动作的中文备注，用于修改Ac_Settings.tags",
+        default=""
+    )
+    
+    # 海岛动画专用属性
+    island_name: StringProperty(
+        name="海岛名",
+        description="海岛动画的海岛名称",
+        default=""
+    )
+    
+    # 动作命名工具说明显示控制
+    show_action_naming_help: BoolProperty(
+        name="显示说明",
+        description="控制动作命名工具说明的显示/隐藏",
+        default=True
+    )
+    
+    # 纹理管理工具说明显示控制
+    show_retex_help: BoolProperty(
+        name="显示纹理管理工具说明",
+        description="控制纹理管理工具智能重命名说明的显示/隐藏",
+        default=False
+    )
 
 # 注册的类列表
 classes = [
@@ -573,6 +655,7 @@ classes = [
     ReTexSettings,
     ObjExportSettings,
     VertexBakerSettings,
+    # TranslationToolsSettings在translation_tools.py中注册
     PopToolsProperties,
 ]
 

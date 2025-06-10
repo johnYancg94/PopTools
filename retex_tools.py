@@ -16,29 +16,23 @@ from bpy.props import BoolProperty, EnumProperty, StringProperty
 
 # 导入工具函数
 from .utils import show_message_box, get_addon_preferences
+from .translation_tools import translate_text_tool
 
 # ============================================================================
 # 操作符定义 / Operator Definitions
 # ============================================================================
 
-class RT_OT_ShowSmartRenameHelp(Operator):
-    """智能重命名帮助提示 / Smart Rename Help"""
-    bl_idname = "rt.show_smart_rename_help"
-    bl_label = ""
-    bl_description = """说明：
-    1. 命名前标注:
-       - b1,b2... 为气球
-       - h1,h2... 为手持
-       以此类推
-       
-    2. 同一个海岛的序号不能重复
-       正确排序方式如: b1,h2,h3,p4
-       
-    3. 标注完成后选择该海岛所有道具,
-       点击【智能重命名】即可"""
-
+class RT_OT_ToggleRetexHelp(Operator):
+    """切换纹理管理工具说明的显示/隐藏"""
+    bl_idname = "rt.toggle_retex_help"
+    bl_label = "切换说明显示"
+    bl_description = "切换纹理管理工具智能重命名说明的显示/隐藏状态"
+    bl_options = {'REGISTER'}
+    
     def execute(self, context):
-        return {'CANCELLED'}  # 不执行任何操作
+        props = context.scene.poptools_props
+        props.show_retex_help = not props.show_retex_help
+        return {'FINISHED'}
 
 class RT_OT_SmartRenameObjects(Operator):
     """智能重命名物体 / Smart Rename Objects"""
@@ -53,7 +47,7 @@ class RT_OT_SmartRenameObjects(Operator):
         errors = []
         
         # 获取用户输入的ItemLand值
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         item_land = props.item_land
         
         # 定义类型映射字典
@@ -127,7 +121,7 @@ class RT_OT_RenameTextures(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         selected_objects = context.selected_objects
         
         if not selected_objects:
@@ -166,7 +160,7 @@ class RT_OT_ResizeTextures(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         selected_objects = bpy.context.selected_objects
         total_resized = 0
         total_skipped = 0
@@ -296,7 +290,7 @@ class RT_OT_AddCustomBodyType(Operator):
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         
         if not self.new_body_type.strip():
             show_message_box("请输入有效的体型名称", "错误", 'ERROR')
@@ -328,7 +322,7 @@ class RT_OT_SetTexnameOfObject(Operator):
         selected_objects = bpy.context.selected_objects
         total_renamed = 0
         errors = []
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         
         for obj in selected_objects:
             if obj.material_slots:
@@ -441,7 +435,7 @@ class RT_OT_AdjustSerialNumber(Operator):
             return {'CANCELLED'}
 
         try:
-            props = context.scene.poptools.retex_settings
+            props = context.scene.poptools_props.retex_settings
             current_value_str = getattr(props, self.target_property)
             try:
                 current_value_int = int(current_value_str)
@@ -478,7 +472,7 @@ class RT_OT_ReplaceTextures(Operator):
     def execute(self, context):
         total_renamed = 0
         errors = []
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         
         # 遍历所有图片
         for image in bpy.data.images:
@@ -541,7 +535,7 @@ class RT_OT_RenameCharacterBody(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         selected_objects = bpy.context.selected_objects
         body_type = props.character_body_type
         serial_number = props.character_serial_number
@@ -582,7 +576,7 @@ class RT_OT_RenameAnimal(Operator):
     bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         selected_objects = bpy.context.selected_objects
         body_type = props.animal_body_type
         serial_number = props.animal_serial_number
@@ -639,7 +633,7 @@ class RT_OT_RenameCharacterHair(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         selected_objects = bpy.context.selected_objects
         body_type = props.character_body_type
         serial_number = props.character_serial_number
@@ -681,7 +675,7 @@ class RT_OT_RenameBuildingObjects(Operator):
 
     def execute(self, context):
         selected_objects = bpy.context.selected_objects
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         
         # 获取用户输入
         building_type = props.building_type
@@ -772,7 +766,7 @@ class RT_OT_SetBuildingType(Operator):
     )
     
     def execute(self, context):
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         props.building_type = self.building_type
         return {'FINISHED'}
 
@@ -970,7 +964,7 @@ class RT_OT_CheckUVs(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
         objects_with_multiple_uvs = []
 
         for obj in bpy.data.objects:
@@ -1113,23 +1107,61 @@ class RT_OT_ClearAnnotations(Operator):
 # 面板定义 / Panel Definitions
 # ============================================================================
 
-class RT_PT_TextureRenamerPanel(Panel):
-    """纹理管理面板 / Texture Management Panel"""
+class RT_OT_TextureManagerPopup(Operator):
+    """纹理管理弹出面板 / Texture Manager Popup Panel"""
+    bl_idname = "rt.texture_manager_popup"
     bl_label = "纹理管理"
-    bl_idname = "RT_PT_TextureRenamerPanel"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'PopTools'
-    bl_order = 0
-
-    @classmethod
-    def poll(cls, context):
-        prefs = get_addon_preferences()
-        return prefs and prefs.enable_retex_tools
-
+    bl_description = "打开纹理管理弹出面板"
+    bl_options = {'REGISTER'}
+    
+    def execute(self, context):
+        return context.window_manager.invoke_popup(self, width=400)
+    
     def draw(self, context):
         layout = self.layout
-        props = context.scene.poptools.retex_settings
+        props = context.scene.poptools_props.retex_settings
+        
+        # 翻译工具部分
+        translate_box = layout.box()
+        translate_box.label(text="翻译工具：", icon='FILE_TEXT')
+        
+        # 语言选择行
+        lang_row = translate_box.row(align=True)
+        
+        # 源语言 - 占1/3
+        source_col = lang_row.column()
+        source_col.scale_x = 1.0
+        source_col.prop(props, "translate_source_lang", text="")
+        
+        # 箭头标识 - 占1/3
+        arrow_col = lang_row.column()
+        arrow_col.scale_x = 1.0
+        arrow_col.label(text="to:", icon='FORWARD')
+        
+        # 目标语言 - 占1/3
+        target_col = lang_row.column()
+        target_col.scale_x = 1.0
+        target_col.prop(props, "translate_target_lang", text="")
+        
+        # 输入文本框
+        input_row = translate_box.row()
+        input_row.prop(props, "translate_input_text", text="输入内容")
+        
+        # 翻译按钮
+        translate_row = translate_box.row()
+        translate_row.operator("rt.translate_text", text="翻译", icon='ARROW_LEFTRIGHT')
+        
+        # 输出文本框（只有在有翻译结果时才显示）
+        if props.translate_output_text:
+            output_row = translate_box.row()
+            output_row.prop(props, "translate_output_text", text="翻译结果")
+            
+            # 应用翻译结果按钮
+            apply_row = translate_box.row()
+            apply_row.operator("rt.apply_translation_to_objects", text="命名应用到选中物体", icon='OBJECT_DATA')
+        
+        # 分隔线
+        layout.separator()
         
         # 智能重命名部分
         box = layout.box()
@@ -1137,14 +1169,37 @@ class RT_PT_TextureRenamerPanel(Panel):
         row = box.row()
         row.prop(props, "item_land", text="海岛名")
         
+        # 帮助说明控制
+        help_row = box.row(align=True)
+        props_main = context.scene.poptools_props
+        if props_main.show_retex_help:
+            help_row.operator("rt.toggle_retex_help", text="隐藏说明", icon='HIDE_ON')
+            
+            # 显示说明内容
+            help_box = box.box()
+            help_box.label(text="说明：")
+            help_box.label(text="步骤:")
+            help_box.label(text="1. 命名前标注:")
+            help_box.label(text="   - b1,b2... 为气球")
+            help_box.label(text="   - 也可以1b,2b,...数字加字母就可以")
+            help_box.label(text="   - h1,h2... 为手持")
+            help_box.label(text="   以此类推")
+            help_box.label(text="")
+            help_box.label(text="2. 同一个海岛的序号不能重复")
+            help_box.label(text="   正确排序方式如: b1,h2,h3,p4")
+            help_box.label(text="")
+            help_box.label(text="3. 标注完成后选择该海岛所有道具,")
+            help_box.label(text="   点击【智能重命名】即可")
+        else:
+            help_row.operator("rt.toggle_retex_help", text="显示说明", icon='HIDE_OFF')
+        
         # 类型标识符说明
         note_box = box.box()
         note_box.label(text="类型标识符说明：")
         note_box.label(text="b：气球 h：手持 p：堂食 c：头戴")
         
-        # 帮助按钮和重命名按钮
+        # 重命名按钮
         row = box.row(align=True)
-        row.operator("rt.show_smart_rename_help", text="", icon='QUESTION')
         row.operator("rt.smart_rename_objects", text="智能重命名选中物体", icon='OUTLINER_OB_MESH')
         
         # 分隔线
@@ -1218,6 +1273,8 @@ class RT_PT_TextureRenamerPanel(Panel):
         
         # 添加后缀输入框
         row = char_box.row(align=True)
+        row.operator("wm.url_open", text="蜂鸟角色模型资产表", icon='URL').url = "https://inspire.sg.larksuite.com/sheets/NevZs68dQhvPF4t1mQGlk77Tgrb?from=from_copylink"
+        row = char_box.row(align=True)
         split = row.split(factor=0.3)
         split.label(text="后缀:")
         split.prop(props, "character_suffix", text="")
@@ -1288,7 +1345,258 @@ class RT_PT_TextureRenamerPanel(Panel):
         split.label(text="建筑名:")
         split.prop(props, "building_name", text="")
         
-        # 序号现在自动递增，无需手动选择
+        # 重命名按钮
+        row = building_box.row(align=True)
+        row.operator("rt.rename_building_objects", text="自动重命名选中建筑", icon='HOME')
+        
+        # 烘焙高低模自动命名
+        row = building_box.row(align=True)
+        row.separator()
+        row = building_box.row(align=True)
+        row.operator("rt.auto_name_bake_models", text="烘焙高低模自动命名", icon='MESH_DATA')
+
+class RT_PT_TextureRenamerPanel(Panel):
+    """纹理管理面板 / Texture Management Panel"""
+    bl_label = "纹理管理"
+    bl_idname = "RT_PT_TextureRenamerPanel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'PopTools'
+    bl_order = 0
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        prefs = get_addon_preferences()
+        return prefs and prefs.enable_retex_tools
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.poptools_props.retex_settings
+        
+        # 翻译工具部分
+        translate_box = layout.box()
+        translate_box.label(text="翻译工具：", icon='FILE_TEXT')
+        
+        # 语言选择行
+        lang_row = translate_box.row(align=True)
+        
+        # 源语言 - 占1/3
+        source_col = lang_row.column()
+        source_col.scale_x = 1.0
+        source_col.prop(props, "translate_source_lang", text="")
+        
+        # 箭头标识 - 占1/3
+        arrow_col = lang_row.column()
+        arrow_col.scale_x = 1.0
+        arrow_col.label(text="to:", icon='FORWARD')
+        
+        # 目标语言 - 占1/3
+        target_col = lang_row.column()
+        target_col.scale_x = 1.0
+        target_col.prop(props, "translate_target_lang", text="")
+        
+        # 输入文本框
+        input_row = translate_box.row()
+        input_row.prop(props, "translate_input_text", text="输入内容")
+        
+        # 翻译按钮
+        translate_row = translate_box.row()
+        translate_row.operator("rt.translate_text", text="翻译", icon='ARROW_LEFTRIGHT')
+        
+        # 输出文本框（只有在有翻译结果时才显示）
+        if props.translate_output_text:
+            output_row = translate_box.row()
+            output_row.prop(props, "translate_output_text", text="翻译结果")
+            
+            # 应用翻译结果按钮
+            apply_row = translate_box.row()
+            apply_row.operator("rt.apply_translation_to_objects", text="命名应用到选中物体", icon='OBJECT_DATA')
+        
+        # 分隔线
+        layout.separator()
+        
+        # 智能重命名部分
+        box = layout.box()
+        box.label(text="海岛配方道具智能重命名：")
+        row = box.row()
+        row.prop(props, "item_land", text="海岛名")
+        
+        # 类型标识符说明
+        note_box = box.box()
+        note_box.label(text="类型标识符说明：")
+        note_box.label(text="b：气球 h：手持 p：堂食 c：头戴")
+        
+        # 帮助说明控制
+        help_row = box.row(align=True)
+        props_main = context.scene.poptools_props
+        if props_main.show_retex_help:
+            help_row.operator("rt.toggle_retex_help", text="隐藏说明", icon='HIDE_ON')
+            
+            # 显示说明内容
+            help_box = box.box()
+            help_box.label(text="说明：")
+            help_box.label(text="步骤:")
+            help_box.label(text="1. 命名前标注:")
+            help_box.label(text="   - b1,b2... 为气球")
+            help_box.label(text="   - 也可以1b,2b,...数字加字母就可以")
+            help_box.label(text="   - h1,h2... 为手持")
+            help_box.label(text="   以此类推")
+            help_box.label(text="")
+            help_box.label(text="2. 同一个海岛的序号不能重复")
+            help_box.label(text="   正确排序方式如: b1,h2,h3,p4")
+            help_box.label(text="")
+            help_box.label(text="3. 标注完成后选择该海岛所有道具,")
+            help_box.label(text="   点击【智能重命名】即可")
+        else:
+            help_row.operator("rt.toggle_retex_help", text="配方道具命名说明", icon='HIDE_OFF')
+        
+        # 重命名按钮
+        row = box.row(align=True)
+        row.operator("rt.smart_rename_objects", text="智能重命名选中物体", icon='OUTLINER_OB_MESH')
+        
+        # 分隔线
+        layout.separator()
+        
+        # 打包贴图部分
+        pack_box = layout.box()
+        row = pack_box.row()
+        row.operator("file.pack_all", text="打包贴图", icon='PACKAGE')
+        row.operator("rt.unpack_textures", text="解包贴图", icon='IMPORT')
+        
+        # 分隔线
+        layout.separator()
+        
+        # 获取当前勾选框的状态
+        replace_prefix = props.replace_prefix
+        
+        # 创建行布局
+        row = layout.row()
+        
+        # 动态设置图标
+        if replace_prefix:
+            icon = 'CHECKBOX_HLT'
+        else:
+            icon = 'CHECKBOX_DEHLT'
+        
+        # 添加勾选框
+        row.prop(props, "replace_prefix", text="替换为'tex'前缀", icon=icon)
+        
+        # 添加操作按钮
+        row = layout.row()
+        row.operator("rt.set_texname_of_object", text="设置对象的纹理名称", icon='OBJECT_DATA')
+        row = layout.row()
+        row.operator("rt.replace_textures", text="同步所有纹理", icon='FILE_REFRESH')
+        
+        # 分隔线
+        layout.separator()
+        
+        # 添加分辨率设置
+        box = layout.box()
+        box.label(text="纹理分辨率：")
+        row = box.row()
+        row.prop(props, "resolution_preset", text="大小")
+        row = layout.row()
+        row.operator("rt.resize_textures", text="调整纹理大小", icon='IMAGE_DATA')
+        
+        # 添加角色重命名部分
+        layout.separator()
+        char_box = layout.box()
+        char_box.label(text="角色重命名：")
+        
+        # 体型控件放在单独的行
+        row = char_box.row(align=True)
+        row.prop(props, "character_body_type", text="体型")
+        
+        # 序号控件放在新的行，增加间距
+        row = char_box.row(align=True)
+        # 使用split创建一个更紧凑的布局
+        split = row.split(factor=0.3)
+        split.label(text="序号:")
+        split.prop(props, "character_serial_number", text="")
+        
+        op_decrease = row.operator("rt.adjust_serial_number", text="", icon='TRIA_LEFT')
+        op_decrease.target_property = "character_serial_number"
+        op_decrease.delta = -1
+        op_decrease.min_value = 1
+        op_increase = row.operator("rt.adjust_serial_number", text="", icon='TRIA_RIGHT')
+        op_increase.target_property = "character_serial_number"
+        op_increase.delta = 1
+        op_increase.min_value = 1
+        
+        # 添加后缀输入框
+        row = char_box.row(align=True)
+        row.operator("wm.url_open", text="蜂鸟角色模型资产表", icon='URL').url = "https://inspire.sg.larksuite.com/sheets/NevZs68dQhvPF4t1mQGlk77Tgrb?from=from_copylink"
+        row = char_box.row(align=True)
+        split = row.split(factor=0.3)
+        split.label(text="后缀:")
+        split.prop(props, "character_suffix", text="")
+        
+        row = char_box.row(align=True)
+        row.operator("rt.rename_character_body", text="命名选中体型", icon='OBJECT_DATA')
+        row.operator("rt.rename_character_hair", text="命名选中发型", icon='OBJECT_DATA')
+        
+        # 添加同步纹理命名按钮
+        row = char_box.row(align=True)
+        row.operator("rt.sync_texture_names", text="同步选中模型纹理命名", icon='FILE_REFRESH')
+        
+        # 添加一键标注和清理标注按钮
+        row = char_box.row(align=True)
+        row.operator("rt.create_annotations", text="一键标注", icon='TEXT')
+        row.operator("rt.clear_annotations", text="清理标注", icon='TRASH')
+        
+        # 添加动物重命名部分
+        layout.separator()
+        animal_box = layout.box()
+        animal_box.label(text="动物重命名：")
+        
+        # 体型控件放在单独的行
+        row = animal_box.row(align=True)
+        row.prop(props, "animal_body_type", text="体型")
+        
+        # 序号控件放在新的行，增加间距
+        row = animal_box.row(align=True)
+        # 使用split创建一个更紧凑的布局
+        split = row.split(factor=0.3)
+        split.label(text="序号:")
+        split.prop(props, "animal_serial_number", text="")
+        op_decrease = row.operator("rt.adjust_serial_number", text="", icon='TRIA_LEFT')
+        op_decrease.target_property = "animal_serial_number"
+        op_decrease.delta = -1
+        op_decrease.min_value = 1
+        op_increase = row.operator("rt.adjust_serial_number", text="", icon='TRIA_RIGHT')
+        op_increase.target_property = "animal_serial_number"
+        op_increase.delta = 1
+        op_increase.min_value = 1
+        
+        row = animal_box.row(align=True)
+        row.operator("rt.rename_animal", text="命名选中动物", icon='OBJECT_DATA')
+        
+        # 添加建筑重命名部分
+        layout.separator()
+        building_box = layout.box()
+        building_box.label(text="建筑重命名：")
+        
+        # 建筑类型按钮组
+        type_row = building_box.row(align=True)
+        # 静态建筑按钮
+        op_static = type_row.operator("rt.set_building_type", text="静态建筑", depress=(props.building_type == 'buildpart'))
+        op_static.building_type = 'buildpart'
+        # 动画建筑按钮
+        op_anim = type_row.operator("rt.set_building_type", text="动画建筑", depress=(props.building_type == 'anibuild'))
+        op_anim.building_type = 'anibuild'
+        
+        # 海岛名输入框
+        row = building_box.row(align=True)
+        split = row.split(factor=0.3)
+        split.label(text="海岛名:")
+        split.prop(props, "building_island_name", text="")
+        
+        # 建筑名输入框
+        row = building_box.row(align=True)
+        split = row.split(factor=0.3)
+        split.label(text="建筑名:")
+        split.prop(props, "building_name", text="")
         
         # 重命名按钮
         row = building_box.row(align=True)
@@ -1300,64 +1608,153 @@ class RT_PT_TextureRenamerPanel(Panel):
         row = building_box.row(align=True)
         row.operator("rt.auto_name_bake_models", text="烘焙高低模自动命名", icon='MESH_DATA')
 
-class RT_PT_3DCoatPanel(Panel):
-    """导出3DCoat前整理面板 / 3DCoat Export Preparation Panel"""
-    bl_label = "导出3DCoat前整理"
-    bl_idname = "RT_PT_3DCoatPanel"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'PopTools'
-    bl_order = 1
+# 3DCoat面板已移动到导出FBX面板中
 
-    @classmethod
-    def poll(cls, context):
-        prefs = get_addon_preferences()
-        return prefs and prefs.enable_retex_tools
+class RT_OT_TranslateText(Operator):
+    """翻译文本操作符 / Translate Text Operator"""
+    bl_idname = "rt.translate_text"
+    bl_label = "翻译"
+    bl_description = "翻译输入的文本"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        
+        if not props.translate_input_text.strip():
+            show_message_box("请输入要翻译的文本", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        try:
+            # 调用翻译工具函数
+            result = translate_text_tool(
+                props.translate_input_text,
+                props.translate_source_lang,
+                props.translate_target_lang
+            )
+            
+            # 将翻译结果设置到输出文本框
+            props.translate_output_text = result
+            
+            show_message_box("翻译完成", "信息", 'INFO')
+            
+        except Exception as e:
+            show_message_box(f"翻译失败: {str(e)}", "错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        return {'FINISHED'}
 
-    def draw(self, context):
-        layout = self.layout
-        props = context.scene.poptools.retex_settings
-
-        # 添加材质整理部分
-        mat_box = layout.box()
-        mat_box.label(text="材质整理：")
-        row = mat_box.row()
-        row.operator("rt.organize_selected_materials", text="一键整理选中模型材质", icon='MATERIAL')
-
-        # 添加UV检查部分
-        uv_box = layout.box()
-        uv_box.label(text="UV检查：")
-        row = uv_box.row()
-        row.operator("rt.check_uvs", text="一键检查UV", icon='UV_DATA')
-
-        # 显示UV检查结果
-        if props.uv_check_results:
-            results_box = uv_box.box()
-            if props.uv_check_results == "所有模型UV正常，无重复UV Map":
-                row = results_box.row()
-                row.label(text="无重复UV模型", icon='CHECKMARK')
+class RT_OT_ApplyTranslationToObjects(Operator):
+    """将翻译结果应用到选中物体 / Apply Translation to Selected Objects"""
+    bl_idname = "rt.apply_translation_to_objects"
+    bl_label = "命名应用到选中物体"
+    bl_description = "将翻译结果应用到选中物体，重命名物体的object和data name"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        selected_objects = context.selected_objects
+        
+        if not selected_objects:
+            show_message_box("请先选择要重命名的物体", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        if not props.translate_output_text.strip():
+            show_message_box("请先进行翻译获取结果", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 清理翻译结果，移除特殊字符，转为小写，空格替换为下划线
+        cleaned_text = props.translate_output_text.lower().replace(" ", "_")
+        # 移除非字母数字和下划线的字符
+        import re
+        cleaned_text = re.sub(r'[^a-zA-Z0-9_]', '', cleaned_text)
+        
+        renamed_count = 0
+        
+        for i, obj in enumerate(selected_objects):
+            # 为每个物体生成唯一名称（添加序号）
+            if len(selected_objects) > 1:
+                new_name = f"{cleaned_text}_{i+1:02d}"
             else:
-                results_box.label(text="存在多个UV Map的模型：")
-                # 创建一个水平布局来显示模型名称
-                flow = results_box.column_flow(columns=4, align=True)
-                # 将结果字符串拆分为列表
-                items = props.uv_check_results.split('\n')
-                for item in items:
-                    if item.strip():
-                        # 每个模型名称占据单独一行
-                        flow.label(text=item)
-        elif props.uv_check_triggered:
-            results_box = uv_box.box()
-            # 如果检查已触发但结果为空（可能在操作符中被清空表示无问题）
-            row = results_box.row()
-            row.label(text="无重复UV模型", icon='CHECKMARK')
+                new_name = cleaned_text
+            
+            # 检查名称是否已存在，如果存在则添加后缀
+            original_name = new_name
+            counter = 1
+            while new_name in bpy.data.objects:
+                new_name = f"{original_name}_{counter}"
+                counter += 1
+            
+            # 重命名物体
+            obj.name = new_name
+            
+            # 重命名物体数据（如果是网格对象）
+            if obj.type == 'MESH' and obj.data:
+                obj.data.name = new_name
+            elif obj.type == 'CURVE' and obj.data:
+                obj.data.name = new_name
+            elif obj.type == 'SURFACE' and obj.data:
+                obj.data.name = new_name
+            elif obj.type == 'META' and obj.data:
+                obj.data.name = new_name
+            elif obj.type == 'FONT' and obj.data:
+                obj.data.name = new_name
+            elif obj.type == 'ARMATURE' and obj.data:
+                obj.data.name = new_name
+            elif obj.type == 'LATTICE' and obj.data:
+                obj.data.name = new_name
+            elif obj.type == 'EMPTY':
+                pass  # Empty对象没有data
+            elif obj.type == 'CAMERA' and obj.data:
+                obj.data.name = new_name
+            elif obj.type == 'LIGHT' and obj.data:
+                obj.data.name = new_name
+            
+            renamed_count += 1
+        
+        show_message_box(f"成功重命名 {renamed_count} 个物体", "重命名完成", 'INFO')
+        return {'FINISHED'}
+
+# ============================================================================
+# 快捷键管理 / Keymap Management
+# ============================================================================
+
+addon_keymaps = []
+
+def register_keymaps():
+    """注册快捷键 / Register keymaps"""
+    global addon_keymaps
+    
+    # 获取快捷键配置
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.addon
+    
+    if kc:
+        # 创建3D视图快捷键映射
+        km = kc.keymaps.new(name='3D View', space_type='VIEW_3D')
+        
+        # 添加Ctrl+T快捷键用于打开纹理管理弹出面板
+        kmi = km.keymap_items.new(
+            "rt.texture_manager_popup",
+            type='T',
+            value='PRESS',
+            ctrl=True
+        )
+        addon_keymaps.append((km, kmi))
+
+def unregister_keymaps():
+    """注销快捷键 / Unregister keymaps"""
+    global addon_keymaps
+    
+    for km, kmi in addon_keymaps:
+        km.keymap_items.remove(kmi)
+    addon_keymaps.clear()
 
 # ============================================================================
 # 注册和注销 / Registration and Unregistration
 # ============================================================================
 
 classes = [
-    RT_OT_ShowSmartRenameHelp,
+    RT_OT_ToggleRetexHelp,
     RT_OT_SmartRenameObjects,
     RT_OT_RenameTextures,
     RT_OT_ResizeTextures,
@@ -1378,18 +1775,26 @@ classes = [
     RT_OT_CheckUVs,
     RT_OT_CreateAnnotations,
     RT_OT_ClearAnnotations,
+    RT_OT_TranslateText,
+    RT_OT_ApplyTranslationToObjects,
+    RT_OT_TextureManagerPopup,
     RT_PT_TextureRenamerPanel,
-    RT_PT_3DCoatPanel,
 ]
 
 def register():
     """注册所有类 / Register all classes"""
     for cls in classes:
         bpy.utils.register_class(cls)
+    
+    # 延迟注册快捷键，确保Blender完全初始化
+    bpy.app.timers.register(register_keymaps, first_interval=0.1)
     print("ReTex Tools registered successfully")
 
 def unregister():
     """注销所有类 / Unregister all classes"""
+    # 注销快捷键
+    unregister_keymaps()
+    
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)

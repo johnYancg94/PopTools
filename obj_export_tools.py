@@ -295,7 +295,7 @@ class OBJ_OT_batch_export(Operator):
     def execute(self, context):
         """执行批量导出过程"""
         scene = context.scene
-        scene_props = scene.poptools.obj_export_settings
+        scene_props = scene.poptools_props.obj_export_settings
         wm = context.window_manager
         start_time = time.time()
 
@@ -400,7 +400,7 @@ class OBJ_OT_open_export_directory(Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
-        scene_props = context.scene.poptools.obj_export_settings
+        scene_props = context.scene.poptools_props.obj_export_settings
         export_path = bpy.path.abspath(scene_props.obj_export_path)
         
         if os.path.exists(export_path):
@@ -421,6 +421,7 @@ class OBJ_PT_export_panel(Panel):
     bl_region_type = "UI"
     bl_category = "PopTools"
     bl_order = 3
+    bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
     def poll(cls, context):
@@ -429,7 +430,7 @@ class OBJ_PT_export_panel(Panel):
 
     def draw(self, context):
         layout = self.layout
-        props = context.scene.poptools.obj_export_settings
+        props = context.scene.poptools_props.obj_export_settings
         
         layout.use_property_split = True
         layout.use_property_decorate = False
