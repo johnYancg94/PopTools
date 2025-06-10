@@ -10,7 +10,7 @@ def create_zip_package():
     
     exclude_patterns = {
         '__pycache__', '.mypy_cache', '.gitignore', 'packages', 
-        'generate_json.py', 'create_package.py'
+        'generate_json.py', 'create_package.py', '.git','docs',
     }
     
     zip_path.parent.mkdir(exist_ok=True)
