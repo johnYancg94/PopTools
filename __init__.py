@@ -8,7 +8,7 @@ from bpy.props import PointerProperty
 bl_info = {
     "name": "PopTools",
     "author": "jhonyan & Claude",
-    "version": (3, 3, 2),
+    "version": (3, 3, 5),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > PopTools",
     "description": " 蜂鸟三消项目专用Blender工具箱 ",
@@ -95,6 +95,8 @@ def unregister():
     # 删除场景属性
     if hasattr(bpy.types.Scene, 'poptools_props'):
         del bpy.types.Scene.poptools_props
+    
+
     
     # 注销所有模块（逆序）
     for module_name in reversed(module_names):

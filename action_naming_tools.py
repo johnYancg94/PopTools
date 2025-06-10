@@ -360,11 +360,11 @@ class POPTOOLS_PT_action_naming(Panel):
         # 添加隐藏/显示按钮
         if props.show_action_naming_help:
             help_row.operator("poptools.toggle_action_naming_help", text="隐藏说明", icon='HIDE_ON')
-            help_box.label(text="①选择动画类型")
-            help_box.label(text="②如果是海岛NPC专属动画需要输入海岛名,例如\"loveisland\"")
-            help_box.label(text="③输入动作名称,点击翻译,自动翻译为英文")
-            help_box.label(text="④可选输入中文备注,也可以直接使用当前动作名称")
-            help_box.label(text="⑤点击一键自动动作重命名")
+            help_box.label(text="① 选择动画类型")
+            help_box.label(text="② 如果是海岛NPC专属动画需要输入海岛名,例如\"loveisland\"")
+            help_box.label(text="③ 输入动作名称,点击翻译,自动翻译为英文")
+            help_box.label(text="④ 可选输入中文备注,也可以直接使用当前动作名称")
+            help_box.label(text="⑤ 点击一键自动动作重命名")
         else:
             help_row.operator("poptools.toggle_action_naming_help", text="显示说明", icon='HIDE_OFF')
         

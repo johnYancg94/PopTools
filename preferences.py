@@ -171,7 +171,18 @@ class PopToolsPreferences(AddonPreferences):
         default=True
     )
     
-    # 注意：快捷键设置现在通过官方UI模块处理，不再需要自定义属性
+    # 快捷键设置
+    action_naming_hotkey: StringProperty(
+        name="动作命名工具快捷键",
+        description="动作命名工具的快捷键设置",
+        default="CTRL+D"
+    )
+    
+    retex_hotkey: StringProperty(
+        name="纹理管理工具快捷键",
+        description="纹理管理工具弹出面板的快捷键设置",
+        default="CTRL+T"
+    )
     
     # 导出/导入工具启用选项 (兼容性)
     export_import_enable: BoolProperty(
@@ -390,10 +401,14 @@ class PopToolsPreferences(AddonPreferences):
         col.prop(self, "enable_translation_tools", icon='FILE_TEXT')
         col.prop(self, "enable_action_naming_tools", icon='ACTION')
         
+        # 快捷键设置
+        box = layout.box()
+        box.label(text="快捷键设置:", icon='KEYINGSET')
+        
         # 动作命名工具快捷键设置
         if self.enable_action_naming_tools:
-            box = col.box()
-            box.label(text="快捷键设置:", icon='KEYINGSET')
+            action_box = box.box()
+            action_box.label(text="动作命名工具:", icon='ACTION')
             
             # 使用官方快捷键UI模块显示可编辑的快捷键
             if rna_keymap_ui:
@@ -406,14 +421,14 @@ class PopToolsPreferences(AddonPreferences):
                     for km, kmi in action_naming_tools.addon_keymaps:
                         if kmi.idname == 'poptools.action_naming_popup':
                             # 设置上下文指针
-                            box.context_pointer_set("keymap", km.active())
+                            action_box.context_pointer_set("keymap", km.active())
                             # 使用官方UI绘制快捷键项
-                            rna_keymap_ui.draw_kmi([], kc, km.active(), kmi, box, 0)
+                            rna_keymap_ui.draw_kmi([], kc, km.active(), kmi, action_box, 0)
                             break
                     else:
-                        box.label(text="未找到快捷键映射", icon='ERROR')
+                        action_box.label(text="未找到快捷键映射", icon='ERROR')
                 else:
-                    box.label(text="快捷键模块未正确加载", icon='ERROR')
+                    action_box.label(text="快捷键模块未正确加载", icon='ERROR')
             else:
                 # 备用显示方式（如果rna_keymap_ui不可用）
                 wm = bpy.context.window_manager
@@ -423,7 +438,7 @@ class PopToolsPreferences(AddonPreferences):
                     if km:
                         for kmi in km.keymap_items:
                             if kmi.idname == 'poptools.action_naming_popup':
-                                row = box.row()
+                                row = action_box.row()
                                 row.label(text="动作命名弹出面板:")
                                 
                                 # 显示快捷键组合
@@ -437,6 +452,54 @@ class PopToolsPreferences(AddonPreferences):
                                 key_text += kmi.type
                                 
                                 row.label(text=key_text, icon='EVENT_D')
+        
+        # 纹理管理工具快捷键设置
+        if self.enable_retex_tools:
+            retex_box = box.box()
+            retex_box.label(text="纹理管理工具:", icon='TEXTURE')
+            
+            # 使用官方快捷键UI模块显示可编辑的快捷键
+            if rna_keymap_ui:
+                wm = bpy.context.window_manager
+                kc = wm.keyconfigs.addon
+                
+                # 获取插件的快捷键映射
+                from . import retex_tools
+                if hasattr(retex_tools, 'addon_keymaps'):
+                    for km, kmi in retex_tools.addon_keymaps:
+                        if kmi.idname == 'rt.texture_manager_popup':
+                            # 设置上下文指针
+                            retex_box.context_pointer_set("keymap", km.active())
+                            # 使用官方UI绘制快捷键项
+                            rna_keymap_ui.draw_kmi([], kc, km.active(), kmi, retex_box, 0)
+                            break
+                    else:
+                        retex_box.label(text="未找到快捷键映射", icon='ERROR')
+                else:
+                    retex_box.label(text="快捷键模块未正确加载", icon='ERROR')
+            else:
+                # 备用显示方式（如果rna_keymap_ui不可用）
+                wm = bpy.context.window_manager
+                kc = wm.keyconfigs.addon
+                if kc:
+                    km = kc.keymaps.get('3D View')
+                    if km:
+                        for kmi in km.keymap_items:
+                            if kmi.idname == 'rt.texture_manager_popup':
+                                row = retex_box.row()
+                                row.label(text="纹理管理弹出面板:")
+                                
+                                # 显示快捷键组合
+                                key_text = ""
+                                if kmi.ctrl:
+                                    key_text += "Ctrl+"
+                                if kmi.shift:
+                                    key_text += "Shift+"
+                                if kmi.alt:
+                                    key_text += "Alt+"
+                                key_text += kmi.type
+                                
+                                row.label(text=key_text, icon='EVENT_T')
                                 break
                         else:
                             box.label(text="未找到快捷键映射", icon='ERROR')
