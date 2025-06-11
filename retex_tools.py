@@ -395,8 +395,8 @@ class RT_OT_SetTexnameOfObject(Operator):
                                     new_name = obj.name
                                     
                                     # 添加后缀（如果有的话）
-                                    if hasattr(props, 'character_suffix') and props.character_suffix:
-                                        new_name = f"{new_name}_{props.character_suffix}"
+                                    if hasattr(props, 'texture_suffix') and props.texture_suffix:
+                                        new_name = f"{new_name}_{props.texture_suffix}"
                                     
                                     if props.replace_prefix:
                                         # 检查是否已有前缀，如果有则替换为tex_，否则添加tex_前缀
@@ -417,8 +417,8 @@ class RT_OT_SetTexnameOfObject(Operator):
                                         new_name = f"{base_name}_{counter}"
                                         
                                         # 添加后缀（如果有的话）
-                                        if hasattr(props, 'character_suffix') and props.character_suffix:
-                                            new_name = f"{new_name}_{props.character_suffix}"
+                                        if hasattr(props, 'texture_suffix') and props.texture_suffix:
+                                            new_name = f"{new_name}_{props.texture_suffix}"
                                         
                                         if props.replace_prefix:
                                             # 检查是否已有前缀，如果有则替换为tex_，否则添加tex_前缀
@@ -1362,7 +1362,7 @@ class RT_OT_TextureManagerPopup(Operator):
             row = char_box.row(align=True)
             split = row.split(factor=0.3)
             split.label(text="贴图后缀:")
-            split.prop(props, "character_suffix", text="")
+            split.prop(props, "texture_suffix", text="")
             
             # 添加同步纹理命名按钮
             row = char_box.row(align=True)
@@ -1654,7 +1654,7 @@ class RT_PT_TextureRenamerPanel(Panel):
             row = char_box.row(align=True)
             split = row.split(factor=0.3)
             split.label(text="贴图后缀:")
-            split.prop(props, "character_suffix", text="")
+            split.prop(props, "texture_suffix", text="")
             
             # 添加同步纹理命名按钮
             row = char_box.row(align=True)

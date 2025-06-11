@@ -385,6 +385,12 @@ class ReTexSettings(bpy.types.PropertyGroup):
         default=""
     )
     
+    texture_suffix: StringProperty(
+        name="贴图后缀",
+        description="添加贴图后缀,为空则不添加",
+        default=""
+    )
+    
     # 动物重命名属性
     animal_body_type: EnumProperty(
         name="动物体型",
