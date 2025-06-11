@@ -5,6 +5,9 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ## 版本更新日志 / Version Changelog
+### 3.3.9 (2025)
+- **Bug修复**: 修复SDK检测机制
+
 ### 3.3.8 (2025)
 - **工作流优化**: 加入大量表格，点击直接跳转，提高同步效率
 - **用户体验**: 优化UI面板布局，提升操作流畅度
