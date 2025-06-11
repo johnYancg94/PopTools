@@ -648,6 +648,31 @@ class PopToolsProperties(bpy.types.PropertyGroup):
         description="控制纹理管理工具智能重命名说明的显示/隐藏",
         default=False
     )
+    
+    # 四个重命名box的折叠状态控制
+    show_island_rename_box: BoolProperty(
+        name="显示海岛配方道具智能重命名",
+        description="控制海岛配方道具智能重命名框的展开/收起",
+        default=False
+    )
+    
+    show_character_rename_box: BoolProperty(
+        name="显示角色重命名",
+        description="控制角色重命名框的展开/收起",
+        default=False
+    )
+    
+    show_animal_rename_box: BoolProperty(
+        name="显示动物重命名",
+        description="控制动物重命名框的展开/收起",
+        default=False
+    )
+    
+    show_building_rename_box: BoolProperty(
+        name="显示建筑重命名",
+        description="控制建筑重命名框的展开/收起",
+        default=False
+    )
 
 # 注册的类列表
 classes = [
