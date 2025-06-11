@@ -4,6 +4,34 @@ import hashlib
 import json
 from pathlib import Path
 
+def clean_existing_files():
+    """清理packages和docs文件夹下的zip和json文件"""
+    print("开始清理现有文件...")
+    
+    # 清理packages目录
+    packages_dir = Path('./packages')
+    if packages_dir.exists():
+        for file_pattern in ['*.zip', '*.json']:
+            for file_path in packages_dir.glob(file_pattern):
+                try:
+                    file_path.unlink()
+                    print(f"删除packages文件: {file_path}")
+                except Exception as e:
+                    print(f"删除packages文件失败 {file_path}: {e}")
+    
+    # 清理docs目录
+    docs_dir = Path('./docs')
+    if docs_dir.exists():
+        for file_pattern in ['*.zip', '*.json']:
+            for file_path in docs_dir.glob(file_pattern):
+                try:
+                    file_path.unlink()
+                    print(f"删除docs文件: {file_path}")
+                except Exception as e:
+                    print(f"删除docs文件失败 {file_path}: {e}")
+    
+    print("文件清理完成")
+
 def create_zip_package():
     source_dir = Path('.')
     packages_dir = Path('./packages')
@@ -17,10 +45,6 @@ def create_zip_package():
     # 确保packages目录存在
     packages_dir.mkdir(exist_ok=True)
     print(f"创建packages目录: {packages_dir}")
-    
-    if zip_path.exists():
-        zip_path.unlink()
-        print(f"删除现有zip文件: {zip_path}")
     
     print(f"开始创建zip包: {zip_path}")
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -192,24 +216,22 @@ def create_index_json(file_size, hash_value):
     
     import shutil
     
-    # 复制JSON文件到docs目录
+    # 剪切JSON文件到docs目录
     docs_json_path = docs_dir / 'index.json'
-    if docs_json_path.exists():
-        docs_json_path.unlink()
-        print(f"删除原有JSON文件: {docs_json_path}")
-    shutil.copy2(json_path, docs_json_path)
-    print(f"复制JSON文件到: {docs_json_path}")
+    shutil.move(json_path, docs_json_path)
+    print(f"剪切JSON文件到: {docs_json_path}")
     
-    # 复制ZIP文件到docs目录
+    # 剪切ZIP文件到docs目录
     zip_source = packages_dir / 'PopTools.zip'
     zip_dest = docs_dir / 'PopTools.zip'
-    if zip_dest.exists():
-        zip_dest.unlink()
-        print(f"删除原有ZIP文件: {zip_dest}")
-    shutil.copy2(zip_source, zip_dest)
-    print(f"复制ZIP文件到: {zip_dest}")
+    shutil.move(zip_source, zip_dest)
+    print(f"剪切ZIP文件到: {zip_dest}")
 
 if __name__ == '__main__':
+    # 首先清理现有文件
+    clean_existing_files()
+    
+    # 执行打包流程
     file_size, hash_value = create_zip_package()
     create_index_json(file_size, hash_value)
     print("打包完成!")

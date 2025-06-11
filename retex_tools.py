@@ -19,6 +19,311 @@ from .utils import show_message_box, get_addon_preferences
 from .translation_tools import translate_text_tool
 
 # ============================================================================
+# 共享UI绘制函数 / Shared UI Drawing Functions
+# ============================================================================
+
+def draw_texture_manager_ui(layout, context, show_help_section=True, show_extended_features=False):
+    """共享的纹理管理UI绘制函数
+    
+    Args:
+        layout: Blender UI布局对象
+        context: Blender上下文
+        show_help_section: 是否显示帮助说明部分（弹出面板可能不显示某些部分）
+        show_extended_features: 是否显示扩展功能（分辨率设置和角色重命名，仅弹出面板显示）
+    """
+    props = context.scene.poptools_props.retex_settings
+    props_main = context.scene.poptools_props
+    
+    # 翻译工具部分
+    translate_box = layout.box()
+    translate_box.label(text="翻译工具：", icon='FILE_TEXT')
+    
+    # 语言选择行
+    lang_row = translate_box.row(align=True)
+    
+    # 源语言 - 占1/3
+    source_col = lang_row.column()
+    source_col.scale_x = 1.0
+    source_col.prop(props, "translate_source_lang", text="")
+    
+    # 箭头标识 - 占1/3
+    arrow_col = lang_row.column()
+    arrow_col.scale_x = 1.0
+    arrow_col.label(text="to:", icon='FORWARD')
+    
+    # 目标语言 - 占1/3
+    target_col = lang_row.column()
+    target_col.scale_x = 1.0
+    target_col.prop(props, "translate_target_lang", text="")
+    
+    # 输入文本框
+    input_row = translate_box.row()
+    input_row.prop(props, "translate_input_text", text="输入内容")
+    
+    # 翻译按钮
+    translate_row = translate_box.row()
+    translate_row.operator("rt.translate_text", text="翻译", icon='ARROW_LEFTRIGHT')
+    
+    # 输出文本框（只有在有翻译结果时才显示）
+    if props.translate_output_text:
+        output_row = translate_box.row()
+        output_row.prop(props, "translate_output_text", text="翻译结果")
+        
+        # 应用翻译结果按钮
+        apply_row = translate_box.row()
+        apply_row.operator("rt.apply_translation_to_objects", text="命名应用到选中物体", icon='OBJECT_DATA')
+    
+    # 分隔线
+    layout.separator()
+    
+    # 智能重命名部分 - 可折叠
+    box = layout.box()
+    # 标题行，包含折叠按钮
+    header_row = box.row(align=True)
+    if props_main.show_island_rename_box:
+        header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_DOWN', emboss=False)
+    else:
+        header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
+    header_row.label(text="海岛配方道具智能重命名")
+    
+    # 只有在展开状态下才显示内容
+    if props_main.show_island_rename_box:
+        row = box.row()
+        row.prop(props, "item_land", text="海岛名")
+        
+        # 帮助说明控制（仅在固定面板中显示）
+        if show_help_section:
+            help_row = box.row(align=True)
+            if props_main.show_retex_help:
+                help_row.operator("rt.toggle_retex_help", text="隐藏说明", icon='HIDE_ON')
+                
+                # 显示说明内容
+                help_box = box.box()
+                help_box.label(text="说明：")
+                help_box.label(text="步骤:")
+                help_box.label(text="1. 命名前标注:")
+                help_box.label(text="   - b1,b2... 为气球")
+                help_box.label(text="   - 也可以1b,2b,...数字加字母就可以")
+                help_box.label(text="   - h1,h2... 为手持")
+                help_box.label(text="   以此类推")
+                help_box.label(text="")
+                help_box.label(text="2. 同一个海岛的序号不能重复")
+                help_box.label(text="   正确排序方式如: b1,h2,h3,p4")
+                help_box.label(text="")
+                help_box.label(text="3. 标注完成后选择该海岛所有道具,")
+                help_box.label(text="   点击【智能重命名】即可")
+            else:
+                help_row.operator("rt.toggle_retex_help", text="显示说明", icon='HIDE_OFF')
+        
+        # 类型标识符说明
+        note_box = box.box()
+        note_box.label(text="类型标识符说明：")
+        note_box.label(text="b：气球 h：手持 p：堂食 c：头戴")
+        
+        # 重命名按钮
+        row = box.row(align=True)
+        row.operator("rt.smart_rename_objects", text="智能重命名选中物体", icon='OUTLINER_OB_MESH')
+    
+    # 分隔线
+    layout.separator()
+    
+    # 打包贴图部分
+    pack_box = layout.box()
+    row = pack_box.row()
+    row.operator("file.pack_all", text="打包贴图", icon='PACKAGE')
+    row.operator("rt.unpack_textures", text="解包贴图", icon='IMPORT')
+    
+    # 分隔线
+    layout.separator()
+    
+    # 获取当前勾选框的状态
+    replace_prefix = props.replace_prefix
+    
+    # 创建行布局
+    row = layout.row()
+    
+    # 动态设置图标
+    if replace_prefix:
+        icon = 'CHECKBOX_HLT'
+    else:
+        icon = 'CHECKBOX_DEHLT'
+    
+    # 添加勾选框
+    row.prop(props, "replace_prefix", text="替换为'tex'前缀", icon=icon)
+    
+    # 添加操作按钮
+    row = layout.row()
+    row.operator("rt.set_texname_of_object", text="设置对象的纹理名称", icon='OBJECT_DATA')
+    row = layout.row()
+    row.scale_y = 1.5
+    row.operator("rt.replace_textures", text="同步所有纹理", icon='FILE_REFRESH')
+    
+    # 扩展功能（仅在弹出面板中显示）
+    if show_extended_features:
+        # 添加分辨率设置
+        layout.separator()
+        box = layout.box()
+        box.label(text="纹理分辨率：")
+        row = box.row()
+        row.prop(props, "resolution_preset", text="大小")
+        row = layout.row()
+        row.operator("rt.resize_textures", text="调整纹理大小", icon='IMAGE_DATA')
+        
+        # 添加角色重命名部分 - 可折叠
+        layout.separator()
+        char_box = layout.box()
+        # 标题行，包含折叠按钮
+        header_row = char_box.row(align=True)
+        if props_main.show_character_rename_box:
+            header_row.operator("rt.toggle_character_rename_box", text="", icon='TRIA_DOWN', emboss=False)
+        else:
+            header_row.operator("rt.toggle_character_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
+        header_row.label(text="角色重命名")
+
+        # 添加资产表链接框
+        link_box = char_box.box()
+        row = link_box.row(align=True)
+        row.operator("wm.url_open", text="蜂鸟角色模型资产表", icon='URL').url = "https://inspire.sg.larksuite.com/sheets/NevZs68dQhvPF4t1mQGlk77Tgrb?from=from_copylink"
+        
+        # 只有在展开状态下才显示内容
+        if props_main.show_character_rename_box:
+            # 体型控件放在单独的行
+            row = char_box.row(align=True)
+            row.prop(props, "character_body_type", text="体型")
+            
+            # 序号控件放在新的行，增加间距
+            row = char_box.row(align=True)
+            # 使用split创建一个更紧凑的布局
+            split = row.split(factor=0.3)
+            split.label(text="序号:")
+            split.prop(props, "character_serial_number", text="")
+            
+            op_decrease = row.operator("rt.adjust_serial_number", text="", icon='TRIA_LEFT')
+            op_decrease.target_property = "character_serial_number"
+            op_decrease.delta = -1
+            op_decrease.min_value = 1
+            op_increase = row.operator("rt.adjust_serial_number", text="", icon='TRIA_RIGHT')
+            op_increase.target_property = "character_serial_number"
+            op_increase.delta = 1
+            op_increase.min_value = 1
+            
+            # 添加后缀输入框
+            row = char_box.row(align=True)
+            split = row.split(factor=0.3)
+            split.label(text="后缀:")
+            split.prop(props, "character_suffix", text="")
+            
+            row = char_box.row(align=True)
+            row.scale_y = 1.5
+            row.operator("rt.rename_character_body", text="命名选中体型", icon='OBJECT_DATA')
+            row.operator("rt.rename_character_hair", text="命名选中发型", icon='OBJECT_DATA')
+            
+            # 添加贴图后缀输入框
+            row = char_box.row(align=True)
+            split = row.split(factor=0.3)
+            split.label(text="贴图后缀:")
+            split.prop(props, "texture_suffix", text="")
+            
+            # 添加同步纹理命名按钮
+            row = char_box.row(align=True)
+            row.operator("rt.sync_texture_names", text="同步选中纹理的命名", icon='FILE_REFRESH')
+            
+            # 添加一键标注和清理标注按钮
+            row = char_box.row(align=True)
+            row.operator("rt.create_annotations", text="一键标注", icon='TEXT')
+            row.operator("rt.clear_annotations", text="清理标注", icon='TRASH')
+            # 添加资产表链接框
+            link_box = char_box.box()
+            row = link_box.row(align=True)
+            row.operator("wm.url_open", text="标注提交表格", icon='URL').url = "https://inspire.sg.larksuite.com/sheets/Dim7sadLEhXobbtBoX9uFvw4s9d?from=from_copylink"
+        
+        # 添加动物重命名部分 - 可折叠
+        layout.separator()
+        animal_box = layout.box()
+        # 标题行，包含折叠按钮
+        header_row = animal_box.row(align=True)
+        if props_main.show_animal_rename_box:
+            header_row.operator("rt.toggle_animal_rename_box", text="", icon='TRIA_DOWN', emboss=False)
+        else:
+            header_row.operator("rt.toggle_animal_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
+        header_row.label(text="动物重命名")
+        
+        # 只有在展开状态下才显示内容
+        if props_main.show_animal_rename_box:
+            # 体型控件放在单独的行
+            row = animal_box.row(align=True)
+            row.prop(props, "animal_body_type", text="体型")
+            
+            # 序号控件放在新的行，增加间距
+            row = animal_box.row(align=True)
+            # 使用split创建一个更紧凑的布局
+            split = row.split(factor=0.3)
+            split.label(text="序号:")
+            split.prop(props, "animal_serial_number", text="")
+            op_decrease = row.operator("rt.adjust_serial_number", text="", icon='TRIA_LEFT')
+            op_decrease.target_property = "animal_serial_number"
+            op_decrease.delta = -1
+            op_decrease.min_value = 1
+            op_increase = row.operator("rt.adjust_serial_number", text="", icon='TRIA_RIGHT')
+            op_increase.target_property = "animal_serial_number"
+            op_increase.delta = 1
+            op_increase.min_value = 1
+            
+            row = animal_box.row(align=True)
+            row.scale_y = 1.5
+            row.operator("rt.rename_animal", text="命名选中动物", icon='OBJECT_DATA')
+        
+        # 添加建筑重命名部分 - 可折叠
+        layout.separator()
+        building_box = layout.box()
+        # 标题行，包含折叠按钮
+        header_row = building_box.row(align=True)
+        if props_main.show_building_rename_box:
+            header_row.operator("rt.toggle_building_rename_box", text="", icon='TRIA_DOWN', emboss=False)
+        else:
+            header_row.operator("rt.toggle_building_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
+        header_row.label(text="建筑重命名")
+        
+        # 只有在展开状态下才显示内容
+        if props_main.show_building_rename_box:
+            # 建筑类型按钮组
+            type_row = building_box.row(align=True)
+            # 静态建筑按钮
+            op_static = type_row.operator("rt.set_building_type", text="静态建筑", depress=(props.building_type == 'buildpart'))
+            op_static.building_type = 'buildpart'
+            # 动画建筑按钮
+            op_anim = type_row.operator("rt.set_building_type", text="动画建筑", depress=(props.building_type == 'anibuild'))
+            op_anim.building_type = 'anibuild'
+
+            # 添加海岛数值表链接框
+            link_box = building_box.box()
+            row = link_box.row(align=True)
+            row.operator("wm.url_open", text="海岛数值表", icon='URL').url = "https://inspire.sg.larksuite.com/sheets/OKiTsUOiPhC9HQtnqsOuILKas8e?from=from_copylink"
+            
+            # 海岛名输入框
+            row = building_box.row(align=True)
+            split = row.split(factor=0.3)
+            split.label(text="海岛名:")
+            split.prop(props, "building_island_name", text="")
+            
+            # 建筑名输入框
+            row = building_box.row(align=True)
+            split = row.split(factor=0.3)
+            split.label(text="建筑名:")
+            split.prop(props, "building_name", text="")
+            
+            # 重命名按钮
+            row = building_box.row(align=True)
+            row.scale_y = 1.5
+            row.operator("rt.rename_building_objects", text="自动重命名选中建筑", icon='HOME')
+            
+            # 烘焙高低模自动命名
+            row = building_box.row(align=True)
+            row.separator()
+            row = building_box.row(align=True)
+            row.scale_y = 1.5
+            row.operator("rt.auto_name_bake_models", text="烘焙高低模自动命名", icon='MESH_DATA')
+# ============================================================================
 # 操作符定义 / Operator Definitions
 # ============================================================================
 
@@ -1168,7 +1473,7 @@ class RT_OT_ClearAnnotations(Operator):
 class RT_OT_TextureManagerPopup(Operator):
     """纹理管理弹出面板 / Texture Manager Popup Panel"""
     bl_idname = "rt.texture_manager_popup"
-    bl_label = "纹理管理"
+    bl_label = "角色纹理重命名"
     bl_description = "打开纹理管理弹出面板"
     bl_options = {'REGISTER'}
     
@@ -1177,284 +1482,12 @@ class RT_OT_TextureManagerPopup(Operator):
     
     def draw(self, context):
         layout = self.layout
-        props = context.scene.poptools_props.retex_settings
-        
-        # 翻译工具部分
-        translate_box = layout.box()
-        translate_box.label(text="翻译工具：", icon='FILE_TEXT')
-        
-        # 语言选择行
-        lang_row = translate_box.row(align=True)
-        
-        # 源语言 - 占1/3
-        source_col = lang_row.column()
-        source_col.scale_x = 1.0
-        source_col.prop(props, "translate_source_lang", text="")
-        
-        # 箭头标识 - 占1/3
-        arrow_col = lang_row.column()
-        arrow_col.scale_x = 1.0
-        arrow_col.label(text="to:", icon='FORWARD')
-        
-        # 目标语言 - 占1/3
-        target_col = lang_row.column()
-        target_col.scale_x = 1.0
-        target_col.prop(props, "translate_target_lang", text="")
-        
-        # 输入文本框
-        input_row = translate_box.row()
-        input_row.prop(props, "translate_input_text", text="输入内容")
-        
-        # 翻译按钮
-        translate_row = translate_box.row()
-        translate_row.operator("rt.translate_text", text="翻译", icon='ARROW_LEFTRIGHT')
-        
-        # 输出文本框（只有在有翻译结果时才显示）
-        if props.translate_output_text:
-            output_row = translate_box.row()
-            output_row.prop(props, "translate_output_text", text="翻译结果")
-            
-            # 应用翻译结果按钮
-            apply_row = translate_box.row()
-            apply_row.operator("rt.apply_translation_to_objects", text="命名应用到选中物体", icon='OBJECT_DATA')
-        
-        # 分隔线
-        layout.separator()
-        
-        # 智能重命名部分 - 可折叠
-        box = layout.box()
-        # 标题行，包含折叠按钮
-        header_row = box.row(align=True)
-        props_main = context.scene.poptools_props
-        if props_main.show_island_rename_box:
-            header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-        else:
-            header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-        header_row.label(text="海岛配方道具智能重命名")
-        
-        # 只有在展开状态下才显示内容
-        if props_main.show_island_rename_box:
-            row = box.row()
-            row.prop(props, "item_land", text="海岛名")
-            
-            # 帮助说明控制
-            help_row = box.row(align=True)
-            if props_main.show_retex_help:
-                help_row.operator("rt.toggle_retex_help", text="隐藏说明", icon='HIDE_ON')
-                
-                # 显示说明内容
-                help_box = box.box()
-                help_box.label(text="说明：")
-                help_box.label(text="步骤:")
-                help_box.label(text="1. 命名前标注:")
-                help_box.label(text="   - b1,b2... 为气球")
-                help_box.label(text="   - 也可以1b,2b,...数字加字母就可以")
-                help_box.label(text="   - h1,h2... 为手持")
-                help_box.label(text="   以此类推")
-                help_box.label(text="")
-                help_box.label(text="2. 同一个海岛的序号不能重复")
-                help_box.label(text="   正确排序方式如: b1,h2,h3,p4")
-                help_box.label(text="")
-                help_box.label(text="3. 标注完成后选择该海岛所有道具,")
-                help_box.label(text="   点击【智能重命名】即可")
-            else:
-                help_row.operator("rt.toggle_retex_help", text="显示说明", icon='HIDE_OFF')
-            
-            # 类型标识符说明
-            note_box = box.box()
-            note_box.label(text="类型标识符说明：")
-            note_box.label(text="b：气球 h：手持 p：堂食 c：头戴")
-            
-            # 重命名按钮
-            row = box.row(align=True)
-            row.operator("rt.smart_rename_objects", text="智能重命名选中物体", icon='OUTLINER_OB_MESH')
-        
-        # 分隔线
-        layout.separator()
-        
-        # 打包贴图部分
-        pack_box = layout.box()
-        row = pack_box.row()
-        row.operator("file.pack_all", text="打包贴图", icon='PACKAGE')
-        row.operator("rt.unpack_textures", text="解包贴图", icon='IMPORT')
-        
-        # 分隔线
-        layout.separator()
-        
-        # 获取当前勾选框的状态
-        replace_prefix = props.replace_prefix
-        
-        # 创建行布局
-        row = layout.row()
-        
-        # 动态设置图标
-        if replace_prefix:
-            icon = 'CHECKBOX_HLT'
-        else:
-            icon = 'CHECKBOX_DEHLT'
-        
-        # 添加勾选框
-        row.prop(props, "replace_prefix", text="替换为'tex'前缀", icon=icon)
-        
-        # 添加操作按钮
-        row = layout.row()
-        row.operator("rt.set_texname_of_object", text="设置对象的纹理名称", icon='OBJECT_DATA')
-        row = layout.row()
-        row.operator("rt.replace_textures", text="同步所有纹理", icon='FILE_REFRESH')
-        
-        # 分隔线
-        layout.separator()
-        
-        # 添加分辨率设置
-        box = layout.box()
-        box.label(text="纹理分辨率：")
-        row = box.row()
-        row.prop(props, "resolution_preset", text="大小")
-        row = layout.row()
-        row.operator("rt.resize_textures", text="调整纹理大小", icon='IMAGE_DATA')
-        
-        # 添加角色重命名部分 - 可折叠
-        layout.separator()
-        char_box = layout.box()
-        # 标题行，包含折叠按钮
-        header_row = char_box.row(align=True)
-        if props_main.show_character_rename_box:
-            header_row.operator("rt.toggle_character_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-        else:
-            header_row.operator("rt.toggle_character_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-        header_row.label(text="角色重命名")
-        
-        # 只有在展开状态下才显示内容
-        if props_main.show_character_rename_box:
-            # 体型控件放在单独的行
-            row = char_box.row(align=True)
-            row.prop(props, "character_body_type", text="体型")
-            
-            # 序号控件放在新的行，增加间距
-            row = char_box.row(align=True)
-            # 使用split创建一个更紧凑的布局
-            split = row.split(factor=0.3)
-            split.label(text="序号:")
-            split.prop(props, "character_serial_number", text="")
-            
-            op_decrease = row.operator("rt.adjust_serial_number", text="", icon='TRIA_LEFT')
-            op_decrease.target_property = "character_serial_number"
-            op_decrease.delta = -1
-            op_decrease.min_value = 1
-            op_increase = row.operator("rt.adjust_serial_number", text="", icon='TRIA_RIGHT')
-            op_increase.target_property = "character_serial_number"
-            op_increase.delta = 1
-            op_increase.min_value = 1
-            
-            # 添加后缀输入框
-            row = char_box.row(align=True)
-            row.operator("wm.url_open", text="蜂鸟角色模型资产表", icon='URL').url = "https://inspire.sg.larksuite.com/sheets/NevZs68dQhvPF4t1mQGlk77Tgrb?from=from_copylink"
-            row = char_box.row(align=True)
-            split = row.split(factor=0.3)
-            split.label(text="后缀:")
-            split.prop(props, "character_suffix", text="")
-            
-            row = char_box.row(align=True)
-            row.operator("rt.rename_character_body", text="命名选中体型", icon='OBJECT_DATA')
-            row.operator("rt.rename_character_hair", text="命名选中发型", icon='OBJECT_DATA')
-            
-            # 添加贴图后缀输入框
-            row = char_box.row(align=True)
-            split = row.split(factor=0.3)
-            split.label(text="贴图后缀:")
-            split.prop(props, "texture_suffix", text="")
-            
-            # 添加同步纹理命名按钮
-            row = char_box.row(align=True)
-            row.operator("rt.sync_texture_names", text="同步选中模型纹理命名", icon='FILE_REFRESH')
-            
-            # 添加一键标注和清理标注按钮
-            row = char_box.row(align=True)
-            row.operator("rt.create_annotations", text="一键标注", icon='TEXT')
-            row.operator("rt.clear_annotations", text="清理标注", icon='TRASH')
-        
-        # 添加动物重命名部分 - 可折叠
-        layout.separator()
-        animal_box = layout.box()
-        # 标题行，包含折叠按钮
-        header_row = animal_box.row(align=True)
-        if props_main.show_animal_rename_box:
-            header_row.operator("rt.toggle_animal_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-        else:
-            header_row.operator("rt.toggle_animal_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-        header_row.label(text="动物重命名")
-        
-        # 只有在展开状态下才显示内容
-        if props_main.show_animal_rename_box:
-            # 体型控件放在单独的行
-            row = animal_box.row(align=True)
-            row.prop(props, "animal_body_type", text="体型")
-            
-            # 序号控件放在新的行，增加间距
-            row = animal_box.row(align=True)
-            # 使用split创建一个更紧凑的布局
-            split = row.split(factor=0.3)
-            split.label(text="序号:")
-            split.prop(props, "animal_serial_number", text="")
-            op_decrease = row.operator("rt.adjust_serial_number", text="", icon='TRIA_LEFT')
-            op_decrease.target_property = "animal_serial_number"
-            op_decrease.delta = -1
-            op_decrease.min_value = 1
-            op_increase = row.operator("rt.adjust_serial_number", text="", icon='TRIA_RIGHT')
-            op_increase.target_property = "animal_serial_number"
-            op_increase.delta = 1
-            op_increase.min_value = 1
-            
-            row = animal_box.row(align=True)
-            row.operator("rt.rename_animal", text="命名选中动物", icon='OBJECT_DATA')
-        
-        # 添加建筑重命名部分 - 可折叠
-        layout.separator()
-        building_box = layout.box()
-        # 标题行，包含折叠按钮
-        header_row = building_box.row(align=True)
-        if props_main.show_building_rename_box:
-            header_row.operator("rt.toggle_building_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-        else:
-            header_row.operator("rt.toggle_building_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-        header_row.label(text="建筑重命名")
-        
-        # 只有在展开状态下才显示内容
-        if props_main.show_building_rename_box:
-            # 建筑类型按钮组
-            type_row = building_box.row(align=True)
-            # 静态建筑按钮
-            op_static = type_row.operator("rt.set_building_type", text="静态建筑", depress=(props.building_type == 'buildpart'))
-            op_static.building_type = 'buildpart'
-            # 动画建筑按钮
-            op_anim = type_row.operator("rt.set_building_type", text="动画建筑", depress=(props.building_type == 'anibuild'))
-            op_anim.building_type = 'anibuild'
-            
-            # 海岛名输入框
-            row = building_box.row(align=True)
-            split = row.split(factor=0.3)
-            split.label(text="海岛名:")
-            split.prop(props, "building_island_name", text="")
-            
-            # 建筑名输入框
-            row = building_box.row(align=True)
-            split = row.split(factor=0.3)
-            split.label(text="建筑名:")
-            split.prop(props, "building_name", text="")
-            
-            # 重命名按钮
-            row = building_box.row(align=True)
-            row.operator("rt.rename_building_objects", text="自动重命名选中建筑", icon='HOME')
-            
-            # 烘焙高低模自动命名
-            row = building_box.row(align=True)
-            row.separator()
-            row = building_box.row(align=True)
-            row.operator("rt.auto_name_bake_models", text="烘焙高低模自动命名", icon='MESH_DATA')
+        # 调用共享的UI绘制函数，弹出面板不显示帮助说明但显示扩展功能
+        draw_texture_manager_ui(layout, context, show_help_section=False, show_extended_features=True)
 
 class RT_PT_TextureRenamerPanel(Panel):
     """纹理管理面板 / Texture Management Panel"""
-    bl_label = "纹理管理"
+    bl_label = "角色纹理重命名"
     bl_idname = "RT_PT_TextureRenamerPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -1469,280 +1502,9 @@ class RT_PT_TextureRenamerPanel(Panel):
 
     def draw(self, context):
         layout = self.layout
-        props = context.scene.poptools_props.retex_settings
         
-        # 翻译工具部分
-        translate_box = layout.box()
-        translate_box.label(text="翻译工具：", icon='FILE_TEXT')
-        
-        # 语言选择行
-        lang_row = translate_box.row(align=True)
-        
-        # 源语言 - 占1/3
-        source_col = lang_row.column()
-        source_col.scale_x = 1.0
-        source_col.prop(props, "translate_source_lang", text="")
-        
-        # 箭头标识 - 占1/3
-        arrow_col = lang_row.column()
-        arrow_col.scale_x = 1.0
-        arrow_col.label(text="to:", icon='FORWARD')
-        
-        # 目标语言 - 占1/3
-        target_col = lang_row.column()
-        target_col.scale_x = 1.0
-        target_col.prop(props, "translate_target_lang", text="")
-        
-        # 输入文本框
-        input_row = translate_box.row()
-        input_row.prop(props, "translate_input_text", text="输入内容")
-        
-        # 翻译按钮
-        translate_row = translate_box.row()
-        translate_row.operator("rt.translate_text", text="翻译", icon='ARROW_LEFTRIGHT')
-        
-        # 输出文本框（只有在有翻译结果时才显示）
-        if props.translate_output_text:
-            output_row = translate_box.row()
-            output_row.prop(props, "translate_output_text", text="翻译结果")
-            
-            # 应用翻译结果按钮
-            apply_row = translate_box.row()
-            apply_row.operator("rt.apply_translation_to_objects", text="命名应用到选中物体", icon='OBJECT_DATA')
-        
-        # 分隔线
-        layout.separator()
-        
-        # 智能重命名部分 - 可折叠
-        box = layout.box()
-        # 标题行，包含折叠按钮
-        header_row = box.row(align=True)
-        props_main = context.scene.poptools_props
-        if props_main.show_island_rename_box:
-            header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-        else:
-            header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-        header_row.label(text="海岛配方道具智能重命名")
-        
-        # 只有在展开状态下才显示内容
-        if props_main.show_island_rename_box:
-            row = box.row()
-            row.prop(props, "item_land", text="海岛名")
-            
-            # 类型标识符说明
-            note_box = box.box()
-            note_box.label(text="类型标识符说明：")
-            note_box.label(text="b：气球 h：手持 p：堂食 c：头戴")
-            
-            # 帮助说明控制
-            help_row = box.row(align=True)
-            if props_main.show_retex_help:
-                help_row.operator("rt.toggle_retex_help", text="隐藏说明", icon='HIDE_ON')
-                
-                # 显示说明内容
-                help_box = box.box()
-                help_box.label(text="说明：")
-                help_box.label(text="步骤:")
-                help_box.label(text="1. 命名前标注:")
-                help_box.label(text="   - b1,b2... 为气球")
-                help_box.label(text="   - 也可以1b,2b,...数字加字母就可以")
-                help_box.label(text="   - h1,h2... 为手持")
-                help_box.label(text="   以此类推")
-                help_box.label(text="")
-                help_box.label(text="2. 同一个海岛的序号不能重复")
-                help_box.label(text="   正确排序方式如: b1,h2,h3,p4")
-                help_box.label(text="")
-                help_box.label(text="3. 标注完成后选择该海岛所有道具,")
-                help_box.label(text="   点击【智能重命名】即可")
-            else:
-                help_row.operator("rt.toggle_retex_help", text="配方道具命名说明", icon='HIDE_OFF')
-            
-            # 重命名按钮
-            row = box.row(align=True)
-            row.operator("rt.smart_rename_objects", text="智能重命名选中物体", icon='OUTLINER_OB_MESH')
-        
-        # 分隔线
-        layout.separator()
-        
-        # 打包贴图部分
-        pack_box = layout.box()
-        row = pack_box.row()
-        row.operator("file.pack_all", text="打包贴图", icon='PACKAGE')
-        row.operator("rt.unpack_textures", text="解包贴图", icon='IMPORT')
-        
-        # 分隔线
-        layout.separator()
-        
-        # 获取当前勾选框的状态
-        replace_prefix = props.replace_prefix
-        
-        # 创建行布局
-        row = layout.row()
-        
-        # 动态设置图标
-        if replace_prefix:
-            icon = 'CHECKBOX_HLT'
-        else:
-            icon = 'CHECKBOX_DEHLT'
-        
-        # 添加勾选框
-        row.prop(props, "replace_prefix", text="替换为'tex'前缀", icon=icon)
-        
-        # 添加操作按钮
-        row = layout.row()
-        row.operator("rt.set_texname_of_object", text="设置对象的纹理名称", icon='OBJECT_DATA')
-        row = layout.row()
-        row.operator("rt.replace_textures", text="同步所有纹理", icon='FILE_REFRESH')
-        
-        # 分隔线
-        layout.separator()
-        
-        # 添加分辨率设置
-        box = layout.box()
-        box.label(text="纹理分辨率：")
-        row = box.row()
-        row.prop(props, "resolution_preset", text="大小")
-        row = layout.row()
-        row.operator("rt.resize_textures", text="调整纹理大小", icon='IMAGE_DATA')
-        
-        # 添加角色重命名部分 - 可折叠
-        layout.separator()
-        char_box = layout.box()
-        # 标题行，包含折叠按钮
-        header_row = char_box.row(align=True)
-        if props_main.show_character_rename_box:
-            header_row.operator("rt.toggle_character_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-        else:
-            header_row.operator("rt.toggle_character_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-        header_row.label(text="角色重命名")
-        
-        # 只有在展开状态下才显示内容
-        if props_main.show_character_rename_box:
-            # 体型控件放在单独的行
-            row = char_box.row(align=True)
-            row.prop(props, "character_body_type", text="体型")
-            
-            # 序号控件放在新的行，增加间距
-            row = char_box.row(align=True)
-            # 使用split创建一个更紧凑的布局
-            split = row.split(factor=0.3)
-            split.label(text="序号:")
-            split.prop(props, "character_serial_number", text="")
-            
-            op_decrease = row.operator("rt.adjust_serial_number", text="", icon='TRIA_LEFT')
-            op_decrease.target_property = "character_serial_number"
-            op_decrease.delta = -1
-            op_decrease.min_value = 1
-            op_increase = row.operator("rt.adjust_serial_number", text="", icon='TRIA_RIGHT')
-            op_increase.target_property = "character_serial_number"
-            op_increase.delta = 1
-            op_increase.min_value = 1
-            
-            # 添加后缀输入框
-            row = char_box.row(align=True)
-            row.operator("wm.url_open", text="蜂鸟角色模型资产表", icon='URL').url = "https://inspire.sg.larksuite.com/sheets/NevZs68dQhvPF4t1mQGlk77Tgrb?from=from_copylink"
-            row = char_box.row(align=True)
-            split = row.split(factor=0.3)
-            split.label(text="后缀:")
-            split.prop(props, "character_suffix", text="")
-            
-            row = char_box.row(align=True)
-            row.operator("rt.rename_character_body", text="命名选中体型", icon='OBJECT_DATA')
-            row.operator("rt.rename_character_hair", text="命名选中发型", icon='OBJECT_DATA')
-            
-            # 添加贴图后缀输入框
-            row = char_box.row(align=True)
-            split = row.split(factor=0.3)
-            split.label(text="贴图后缀:")
-            split.prop(props, "texture_suffix", text="")
-            
-            # 添加同步纹理命名按钮
-            row = char_box.row(align=True)
-            row.operator("rt.sync_texture_names", text="同步选中模型纹理命名", icon='FILE_REFRESH')
-            
-            # 添加一键标注和清理标注按钮
-            row = char_box.row(align=True)
-            row.operator("rt.create_annotations", text="一键标注", icon='TEXT')
-            row.operator("rt.clear_annotations", text="清理标注", icon='TRASH')
-        
-        # 添加动物重命名部分 - 可折叠
-        layout.separator()
-        animal_box = layout.box()
-        # 标题行，包含折叠按钮
-        header_row = animal_box.row(align=True)
-        if props_main.show_animal_rename_box:
-            header_row.operator("rt.toggle_animal_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-        else:
-            header_row.operator("rt.toggle_animal_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-        header_row.label(text="动物重命名")
-        
-        # 只有在展开状态下才显示内容
-        if props_main.show_animal_rename_box:
-            # 体型控件放在单独的行
-            row = animal_box.row(align=True)
-            row.prop(props, "animal_body_type", text="体型")
-            
-            # 序号控件放在新的行，增加间距
-            row = animal_box.row(align=True)
-            # 使用split创建一个更紧凑的布局
-            split = row.split(factor=0.3)
-            split.label(text="序号:")
-            split.prop(props, "animal_serial_number", text="")
-            op_decrease = row.operator("rt.adjust_serial_number", text="", icon='TRIA_LEFT')
-            op_decrease.target_property = "animal_serial_number"
-            op_decrease.delta = -1
-            op_decrease.min_value = 1
-            op_increase = row.operator("rt.adjust_serial_number", text="", icon='TRIA_RIGHT')
-            op_increase.target_property = "animal_serial_number"
-            op_increase.delta = 1
-            op_increase.min_value = 1
-            
-            row = animal_box.row(align=True)
-            row.operator("rt.rename_animal", text="命名选中动物", icon='OBJECT_DATA')
-        
-        # 添加建筑重命名部分 - 可折叠
-        layout.separator()
-        building_box = layout.box()
-        # 标题行，包含折叠按钮
-        header_row = building_box.row(align=True)
-        if props_main.show_building_rename_box:
-            header_row.operator("rt.toggle_building_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-        else:
-            header_row.operator("rt.toggle_building_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-        header_row.label(text="建筑重命名")
-        
-        # 只有在展开状态下才显示内容
-        if props_main.show_building_rename_box:
-            # 建筑类型按钮组
-            type_row = building_box.row(align=True)
-            # 静态建筑按钮
-            op_static = type_row.operator("rt.set_building_type", text="静态建筑", depress=(props.building_type == 'buildpart'))
-            op_static.building_type = 'buildpart'
-            # 动画建筑按钮
-            op_anim = type_row.operator("rt.set_building_type", text="动画建筑", depress=(props.building_type == 'anibuild'))
-            op_anim.building_type = 'anibuild'
-            
-            # 海岛名输入框
-            row = building_box.row(align=True)
-            split = row.split(factor=0.3)
-            split.label(text="海岛名:")
-            split.prop(props, "building_island_name", text="")
-            
-            # 建筑名输入框
-            row = building_box.row(align=True)
-            split = row.split(factor=0.3)
-            split.label(text="建筑名:")
-            split.prop(props, "building_name", text="")
-            
-            # 重命名按钮
-            row = building_box.row(align=True)
-            row.operator("rt.rename_building_objects", text="自动重命名选中建筑", icon='HOME')
-            
-            # 烘焙高低模自动命名
-            row = building_box.row(align=True)
-            row.separator()
-            row = building_box.row(align=True)
-            row.operator("rt.auto_name_bake_models", text="烘焙高低模自动命名", icon='MESH_DATA')
+        # 调用共享的UI绘制函数，固定面板显示帮助说明和所有扩展功能
+        draw_texture_manager_ui(layout, context, show_help_section=True, show_extended_features=True)
 
 # 3DCoat面板已移动到导出FBX面板中
 

@@ -645,7 +645,7 @@ class PopToolsProperties(bpy.types.PropertyGroup):
     show_action_naming_help: BoolProperty(
         name="显示说明",
         description="控制动作命名工具说明的显示/隐藏",
-        default=True
+        default=False
     )
     
     # 纹理管理工具说明显示控制
