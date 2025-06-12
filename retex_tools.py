@@ -218,6 +218,11 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
             row.operator("rt.rename_character_body", text="命名选中体型", icon='OBJECT_DATA')
             row.operator("rt.rename_character_hair", text="命名选中发型", icon='OBJECT_DATA')
             
+            # 添加道具命名按钮
+            row = char_box.row(align=True)
+            row.scale_y = 1.1
+            row.operator("rt.rename_character_tool", text="命名选中道具", icon='TOOL_SETTINGS')
+            
             # 添加贴图后缀输入框
             row = char_box.row(align=True)
             split = row.split(factor=0.3)
@@ -1029,6 +1034,56 @@ class RT_OT_RenameCharacterHair(Operator):
             show_message_box("没有符合条件的模型被重命名", "重命名完成", 'INFO')
         return {'FINISHED'}
 
+class RT_OT_RenameCharacterTool(Operator):
+    """命名选中道具 / Rename Character Tool"""
+    bl_idname = "rt.rename_character_tool"
+    bl_label = "命名选中道具"
+    bl_description = "根据选择的体型和序号重命名选中的道具模型"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        selected_objects = bpy.context.selected_objects
+        body_type = props.character_body_type
+        serial_number = props.character_serial_number
+
+        if not selected_objects:
+            show_message_box("没有选中的模型", "警告", 'WARNING')
+            return {'CANCELLED'}
+
+        if not serial_number.isdigit():
+            show_message_box("序号必须是数字", "错误", 'ERROR')
+            return {'CANCELLED'}
+
+        # 确定使用的后缀，优先使用贴图后缀
+        texture_suffix = props.texture_suffix.strip()
+        character_suffix = props.character_suffix.strip()
+        
+        if texture_suffix:
+            suffix = texture_suffix
+        elif character_suffix:
+            suffix = character_suffix
+        else:
+            show_message_box("请输入角色序号后缀", "错误", 'ERROR')
+            return {'CANCELLED'}
+
+        renamed_count = 0
+        for obj in selected_objects:
+            if obj.type == 'MESH':
+                # 构建新名称：mesh_tool_体型_序号后缀
+                new_name = f"mesh_tool_{body_type}_{serial_number}{suffix}"
+                obj.name = new_name
+                # 同步设置物体的data name
+                if obj.data:
+                    obj.data.name = new_name
+                renamed_count += 1
+        
+        if renamed_count > 0:
+            show_message_box(f"成功重命名 {renamed_count} 个道具模型", "重命名完成", 'INFO')
+        else:
+            show_message_box("没有符合条件的模型被重命名", "重命名完成", 'INFO')
+        return {'FINISHED'}
+
 class RT_OT_RenameBuildingObjects(Operator):
     """建筑重命名 / Rename Building Objects"""
     bl_idname = "rt.rename_building_objects"
@@ -1669,6 +1724,7 @@ classes = [
     RT_OT_RenameAnimal,
     RT_OT_SyncTextureNames,
     RT_OT_RenameCharacterHair,
+    RT_OT_RenameCharacterTool,
     RT_OT_RenameBuildingObjects,
     RT_OT_SetBuildingType,
     # RT_OT_SetBuildingSerial 已移除，序号现在自动递增

@@ -13,41 +13,17 @@ from bpy.types import Panel, Operator, PropertyGroup
 from bpy.props import StringProperty, EnumProperty, BoolProperty, CollectionProperty
 from .utils import show_message_box
 
-# 检查腾讯云SDK是否可用（使用智能检测）
-def check_sdk_availability():
-    """智能检测SDK可用性"""
-    try:
-        # 获取插件首选项
-        prefs = bpy.context.preferences.addons[__package__].preferences
-        
-        # 如果用户禁用了检测且之前验证过，直接返回验证结果
-        if not prefs.sdk_check_enabled and prefs.sdk_installation_verified:
-            return True
-        
-        # 执行实际的SDK检测
-        from tencentcloud.common import credential
-        from tencentcloud.common.profile.client_profile import ClientProfile
-        from tencentcloud.common.profile.http_profile import HttpProfile
-        from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
-        from tencentcloud.tmt.v20180321 import tmt_client, models
-        
-        # 更新验证状态
-        prefs.sdk_installation_verified = True
-        return True
-    except ImportError:
-        # 如果有首选项访问权限，更新验证状态
-        try:
-            prefs = bpy.context.preferences.addons[__package__].preferences
-            prefs.sdk_installation_verified = False
-        except:
-            pass
-        print("[翻译工具] 腾讯云SDK未安装，请运行: pip install tencentcloud-sdk-python")
-        return False
-    except:
-        return False
-
-# 初始化SDK状态
-SDK_AVAILABLE = check_sdk_availability()
+# 尝试导入腾讯云SDK
+try:
+    from tencentcloud.common import credential
+    from tencentcloud.common.profile.client_profile import ClientProfile
+    from tencentcloud.common.profile.http_profile import HttpProfile
+    from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+    from tencentcloud.tmt.v20180321 import tmt_client, models
+    SDK_AVAILABLE = True
+except ImportError:
+    SDK_AVAILABLE = False
+    print("[翻译工具] 腾讯云SDK未安装，请运行: pip install tencentcloud-sdk-python")
 
 # 腾讯云翻译API配置
 class TencentTranslateAPI:
@@ -58,9 +34,8 @@ class TencentTranslateAPI:
         self.secret_key = secret_key
         self.region = region
         
-        # 使用智能检测检查SDK可用性
-        current_sdk_status = check_sdk_availability()
-        if not current_sdk_status:
+        # 检查SDK是否可用
+        if not SDK_AVAILABLE:
             raise ImportError("腾讯云SDK未安装，请运行: pip install tencentcloud-sdk-python")
             
         # 初始化客户端
@@ -73,28 +48,10 @@ class TencentTranslateAPI:
             print(f"[调试] TencentTranslateAPI._init_client: secret_id='{self.secret_id}', secret_key='{self.secret_key}'")
             
             if not self.secret_id or not self.secret_key:
-                # 标记API配置验证失败
-                try:
-                    prefs = bpy.context.preferences.addons[__package__].preferences
-                    prefs.api_config_verified = False
-                except:
-                    pass
                 raise Exception(f"API密钥不能为空: secret_id='{self.secret_id}', secret_key='{self.secret_key}'")
             
             if not self.secret_id.strip() or not self.secret_key.strip():
-                # 标记API配置验证失败
-                try:
-                    prefs = bpy.context.preferences.addons[__package__].preferences
-                    prefs.api_config_verified = False
-                except:
-                    pass
                 raise Exception(f"API密钥不能为空白字符: secret_id='{self.secret_id}', secret_key='{self.secret_key}'")
-            
-            # 导入必要的模块（确保SDK可用）
-            from tencentcloud.common import credential
-            from tencentcloud.common.profile.client_profile import ClientProfile
-            from tencentcloud.common.profile.http_profile import HttpProfile
-            from tencentcloud.tmt.v20180321 import tmt_client
             
             # 实例化一个认证对象，入参需要传入腾讯云账户secretId，secretKey
             cred = credential.Credential(self.secret_id, self.secret_key)
@@ -110,21 +67,7 @@ class TencentTranslateAPI:
             # 实例化要请求产品的client对象，clientProfile是可选的
             self.client = tmt_client.TmtClient(cred, self.region, clientProfile)
             
-            # 标记API配置验证成功
-            try:
-                prefs = bpy.context.preferences.addons[__package__].preferences
-                prefs.api_config_verified = True
-                print("[PopTools] API配置验证成功")
-            except:
-                pass
-            
         except Exception as e:
-            # 标记API配置验证失败
-            try:
-                prefs = bpy.context.preferences.addons[__package__].preferences
-                prefs.api_config_verified = False
-            except:
-                pass
             raise Exception(f"初始化腾讯云客户端失败: {str(e)}")
     
     @classmethod
@@ -149,29 +92,12 @@ class TencentTranslateAPI:
     
     def translate_text(self, text, source_lang="auto", target_lang="zh"):
         """翻译文本"""
-        # 使用智能检测验证SDK和API配置
-        try:
-            prefs = bpy.context.preferences.addons[__package__].preferences
+        # 验证API密钥
+        if not self.secret_id or not self.secret_key:
+            return {"error": "请在插件首选项中配置腾讯云API密钥"}
             
-            # 如果用户禁用了检测且之前验证过，跳过重复验证
-            if not prefs.sdk_check_enabled and prefs.sdk_installation_verified and prefs.api_config_verified:
-                pass  # 跳过验证，直接使用
-            else:
-                # 执行验证
-                if not self.secret_id or not self.secret_key:
-                    prefs.api_config_verified = False
-                    return {"error": "请在插件首选项中配置腾讯云API密钥"}
-                
-                if not self.secret_id.strip() or not self.secret_key.strip():
-                    prefs.api_config_verified = False
-                    return {"error": "API密钥不能为空，请检查插件首选项配置"}
-        except:
-            # 如果无法访问首选项，执行基本验证
-            if not self.secret_id or not self.secret_key:
-                return {"error": "请在插件首选项中配置腾讯云API密钥"}
-            
-            if not self.secret_id.strip() or not self.secret_key.strip():
-                return {"error": "API密钥不能为空，请检查插件首选项配置"}
+        if not self.secret_id.strip() or not self.secret_key.strip():
+            return {"error": "API密钥不能为空，请检查插件首选项配置"}
             
         print(f"[翻译调试] 开始翻译: '{text}' ({source_lang} -> {target_lang})")
         print(f"[翻译调试] 使用地域: {self.region}")
@@ -198,13 +124,6 @@ class TencentTranslateAPI:
             translated_text = resp.TargetText
             print(f"[翻译调试] 翻译成功: '{translated_text}'")
             
-            # 标记API配置验证成功
-            try:
-                prefs = bpy.context.preferences.addons[__package__].preferences
-                prefs.api_config_verified = True
-            except:
-                pass
-            
             return {
                 "translated_text": translated_text,
                 "source_lang": resp.Source,
@@ -214,15 +133,6 @@ class TencentTranslateAPI:
         except TencentCloudSDKException as e:
             error_code = e.code
             error_message = e.message
-            
-            # 根据错误类型标记API配置验证状态
-            try:
-                prefs = bpy.context.preferences.addons[__package__].preferences
-                if error_code in ['AuthFailure.SecretIdNotFound', 'AuthFailure.SignatureFailure', 'AuthFailure.TokenFailure']:
-                    prefs.api_config_verified = False
-                    print(f"[PopTools] API配置验证失败: {error_code}")
-            except:
-                pass
             
             # 根据错误代码提供具体的解决建议
             if error_code == 'AuthFailure.SecretIdNotFound':
@@ -244,14 +154,6 @@ class TencentTranslateAPI:
             return {"error": detailed_error}
             
         except Exception as e:
-            # 标记API配置验证失败（未知错误可能与配置有关）
-            try:
-                prefs = bpy.context.preferences.addons[__package__].preferences
-                prefs.api_config_verified = False
-                print(f"[PopTools] API配置验证失败: 未知错误")
-            except:
-                pass
-                
             error_detail = f"未知错误: {str(e)}\n请检查插件配置或联系开发者"
             print(f"[翻译调试] {error_detail}")
             return {"error": error_detail}
@@ -449,8 +351,8 @@ def translate_text_tool(input_text, source_lang='zh', target_lang='en', secret_i
     if not input_text or not input_text.strip():
         return ""
     
-    # 使用智能检测检查SDK是否可用
-    if not check_sdk_availability():
+    # 检查SDK是否可用
+    if not SDK_AVAILABLE:
         print("[翻译工具] 腾讯云SDK未安装，请运行: pip install tencentcloud-sdk-python")
         return input_text
     

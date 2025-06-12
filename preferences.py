@@ -130,58 +130,38 @@ class POPTOOLS_OT_restart_blender(Operator):
         
         return {'FINISHED'}
 
-class POPTOOLS_OT_skip_restart_reminder(Operator):
-    """跳过重启提醒"""
-    bl_idname = "poptools.skip_restart_reminder"
-    bl_label = "跳过重启提醒"
-    bl_description = "跳过重启提醒，用户可以手动重启Blender"
-    bl_options = {'REGISTER'}
-    
-    def execute(self, context):
-        prefs = context.preferences.addons[__package__].preferences
-        prefs.mark_restart_reminder_shown()
-        prefs.sdk_install_success = False  # 重置安装成功标志
-        self.report({'INFO'}, "已跳过重启提醒，请手动重启Blender以使用翻译功能")
-        return {'FINISHED'}
-
-class POPTOOLS_OT_reset_verification(Operator):
-    """重置验证状态"""
-    bl_idname = "poptools.reset_verification"
-    bl_label = "重置验证状态"
-    bl_description = "重置SDK和API验证状态，强制重新检测"
-    bl_options = {'REGISTER'}
-    
-    def execute(self, context):
-        prefs = context.preferences.addons[__package__].preferences
-        prefs.reset_verification_status()
-        prefs.sdk_check_enabled = True  # 重新启用检测
-        self.report({'INFO'}, "验证状态已重置，将重新进行检测")
-        return {'FINISHED'}
-
-class POPTOOLS_OT_verify_api_config(Operator):
-    """验证API配置"""
-    bl_idname = "poptools.verify_api_config"
-    bl_label = "验证API配置"
-    bl_description = "手动验证腾讯云API配置是否正确"
+class POPTOOLS_OT_check_sdk_status(Operator):
+    """手动检测SDK状态"""
+    bl_idname = "poptools.check_sdk_status"
+    bl_label = "检测SDK状态"
+    bl_description = "手动检测腾讯云SDK是否已正确安装"
     bl_options = {'REGISTER'}
     
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
         
-        # 首先检查SDK
-        if not prefs.verify_sdk_installation():
-            self.report({'ERROR'}, "腾讯云SDK未安装，请先安装SDK")
-            return {'CANCELLED'}
-        
-        # 然后验证API配置
-        if prefs.verify_api_config():
-            self.report({'INFO'}, "API配置验证成功！")
-            # 验证成功后建议关闭自动检测以提高性能
-            if prefs.sdk_check_enabled:
-                self.report({'INFO'}, "建议在性能优化选项中关闭SDK检测以提高性能")
-        else:
-            self.report({'ERROR'}, "API配置验证失败，请检查Secret ID和Secret Key")
-        
+        try:
+            # 尝试导入腾讯云SDK
+            import tencentcloud
+            from tencentcloud.common import credential
+            from tencentcloud.tmt.v20180321 import tmt_client, models
+            
+            # SDK导入成功，重置安装标志
+            prefs.sdk_install_success = False
+            
+            # 强制刷新UI
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            for area in context.screen.areas:
+                if area.type == 'PREFERENCES':
+                    area.tag_redraw()
+            
+            self.report({'INFO'}, "SDK检测成功！腾讯云SDK已正确安装并可以使用")
+            
+        except ImportError as e:
+            self.report({'WARNING'}, f"SDK检测失败：腾讯云SDK未安装或安装不完整 - {str(e)}")
+        except Exception as e:
+            self.report({'ERROR'}, f"SDK检测过程中发生错误：{str(e)}")
+            
         return {'FINISHED'}
 
 class PopToolsPreferences(AddonPreferences):
@@ -344,106 +324,6 @@ class PopToolsPreferences(AddonPreferences):
         default=False
     )
     
-    # 新增：智能检测和性能优化相关属性
-    sdk_installation_verified: BoolProperty(
-        name="SDK安装已验证",
-        description="标记SDK安装状态已验证，避免重复检测",
-        default=False
-    )
-    
-    api_config_verified: BoolProperty(
-        name="API配置已验证",
-        description="标记API配置已验证成功，避免重复检测",
-        default=False
-    )
-    
-    sdk_check_enabled: BoolProperty(
-        name="启用SDK检测",
-        description="是否启用腾讯云SDK检测（成功配置后可关闭以提高性能）",
-        default=False
-    )
-    
-    restart_reminder_shown: BoolProperty(
-        name="重启提醒已显示",
-        description="标记重启提醒是否已显示过",
-        default=False
-    )
-    
-    def verify_sdk_installation(self):
-        """验证SDK安装状态"""
-        if not self.sdk_check_enabled:
-            return self.sdk_installation_verified
-        
-        try:
-            import tencentcloud
-            self.sdk_installation_verified = True
-            print("[PopTools] 腾讯云SDK验证成功")
-            return True
-        except ImportError:
-            self.sdk_installation_verified = False
-            print("[PopTools] 腾讯云SDK未安装")
-            return False
-    
-    def verify_api_config(self):
-        """验证API配置"""
-        if not self.sdk_check_enabled:
-            return self.api_config_verified
-        
-        # 检查解锁密码方式的API配置
-        if self.api_password:
-            try:
-                from .crypto_utils import get_decrypted_api_key
-                secret_id = get_decrypted_api_key("tencent_secret_id", self.api_password)
-                secret_key = get_decrypted_api_key("tencent_secret_key", self.api_password)
-                
-                if secret_id and secret_key and len(secret_id) > 10 and len(secret_key) > 10:
-                    self.api_config_verified = True
-                    print("[PopTools] API配置验证成功（解锁方式）")
-                    return True
-            except Exception as e:
-                print(f"[PopTools] 解锁方式API验证失败: {e}")
-        
-        # 检查手动配置的API
-        secret_id = self.tencent_secret_id
-        secret_key = self.tencent_secret_key
-        
-        if secret_id and secret_key and len(secret_id) > 10 and len(secret_key) > 10:
-            self.api_config_verified = True
-            print("[PopTools] API配置验证成功（手动方式）")
-            return True
-        
-        self.api_config_verified = False
-        return False
-    
-    def should_show_restart_reminder(self):
-        """判断是否应该显示重启提醒"""
-        # 如果SDK安装成功但还没有验证过安装状态，且没有显示过重启提醒
-        if self.sdk_install_success and not self.sdk_installation_verified and not self.restart_reminder_shown:
-            return True
-        return False
-    
-    def should_check_sdk(self):
-        """判断是否需要检测SDK"""
-        # 如果用户禁用了检测，则不检测
-        if not self.sdk_check_enabled:
-            return False
-        
-        # 如果已经验证过且API配置也验证过，则不需要重复检测
-        if self.sdk_installation_verified and self.api_config_verified:
-            return False
-        
-        return True
-    
-    def reset_verification_status(self):
-        """重置验证状态（用于强制重新检测）"""
-        self.sdk_installation_verified = False
-        self.api_config_verified = False
-        self.restart_reminder_shown = False
-        print("[PopTools] 验证状态已重置")
-    
-    def mark_restart_reminder_shown(self):
-        """标记重启提醒已显示"""
-        self.restart_reminder_shown = True
     
     def draw(self, context):
         layout = self.layout
@@ -453,27 +333,16 @@ class PopToolsPreferences(AddonPreferences):
             box = layout.box()
             box.label(text="翻译工具配置:", icon='FILE_TEXT')
             
-            # 使用智能检测机制
-            sdk_available = self.verify_sdk_installation()
-            api_configured = self.verify_api_config()
+            # SDK状态检查
+            try:
+                import tencentcloud
+                sdk_available = True
+            except ImportError:
+                sdk_available = False
             
             # SDK状态显示
             col = box.column()
-            
-            # 性能优化选项（放在顶部）
-            if sdk_available and api_configured:
-                perf_box = col.box()
-                perf_col = perf_box.column()
-                perf_col.label(text="性能优化选项:", icon='PREFERENCES')
-                perf_col.prop(self, "sdk_check_enabled", text="启用SDK检测（已配置成功，可关闭以提高性能）")
-                
-                if not self.sdk_check_enabled:
-                    row = perf_col.row()
-                    row.operator("poptools.reset_verification", text="重新启用检测", icon='FILE_REFRESH')
-                
-                col.separator()
-            
-            if sdk_available and not self.should_show_restart_reminder():
+            if sdk_available and not self.sdk_install_success:
                 row = col.row()
                 row.label(text="✓ 腾讯云SDK已安装", icon='CHECKMARK')
                 
@@ -525,14 +394,8 @@ class PopToolsPreferences(AddonPreferences):
                 col.separator()
                 col.prop(self, "tencent_region")
                 
-                # 验证按钮
-                col.separator()
-                verify_row = col.row()
-                verify_row.scale_y = 1.2
-                verify_row.operator("poptools.verify_api_config", text="验证API配置", icon='CHECKMARK')
-                
-            elif self.should_show_restart_reminder():
-                # SDK安装成功，显示重启按钮（智能判断）
+            elif self.sdk_install_success:
+                # SDK安装成功，显示重启按钮
                 row = col.row()
                 row.label(text="✓ 腾讯云SDK安装成功", icon='CHECKMARK')
                 
@@ -540,17 +403,18 @@ class PopToolsPreferences(AddonPreferences):
                 row.alert = True
                 row.label(text="请重启Blender以使用翻译功能", icon='INFO')
                 
+                # 按钮行：重启和手动检测
+                button_row = col.row(align=True)
+                button_row.scale_y = 1.3
+                
                 # 重启按钮
-                restart_row = col.row()
-                restart_row.scale_y = 1.5
-                restart_op = restart_row.operator("poptools.restart_blender", text="保存配置并重启Blender", icon='FILE_REFRESH')
+                restart_btn = button_row.row()
+                restart_btn.scale_x = 2.0
+                restart_btn.operator("poptools.restart_blender", text="保存配置并重启Blender", icon='FILE_REFRESH')
                 
-                # 跳过重启按钮（用于测试或用户不想立即重启）
-                skip_row = col.row()
-                skip_row.operator("poptools.skip_restart_reminder", text="跳过重启提醒（手动重启后生效）", icon='CANCEL')
-                
-                # 标记重启提醒已显示
-                self.mark_restart_reminder_shown()
+                # 手动检测按钮
+                check_btn = button_row.row()
+                check_btn.operator("poptools.check_sdk_status", text="手动检测SDK", icon='VIEWZOOM')
                  
             else:
                 # SDK未安装
@@ -706,9 +570,7 @@ classes = (
     POPTOOLS_OT_unlock_api_keys,
     POPTOOLS_OT_install_tencent_sdk,
     POPTOOLS_OT_restart_blender,
-    POPTOOLS_OT_skip_restart_reminder,
-    POPTOOLS_OT_reset_verification,
-    POPTOOLS_OT_verify_api_config,
+    POPTOOLS_OT_check_sdk_status,
     PopToolsPreferences,
 )
 
