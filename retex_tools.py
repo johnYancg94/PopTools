@@ -16,7 +16,7 @@ from bpy.props import BoolProperty, EnumProperty, StringProperty
 
 # 导入工具函数
 from .utils import show_message_box, get_addon_preferences
-from .translation_tools import translate_text_tool
+from .translation_tools import translate_text_tool, ai_translate_text_tool
 
 # ============================================================================
 # 共享UI绘制函数 / Shared UI Drawing Functions
@@ -63,6 +63,7 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
     # 翻译按钮
     translate_row = translate_box.row()
     translate_row.operator("rt.translate_text", text="翻译", icon='ARROW_LEFTRIGHT')
+    translate_row.operator("rt.ai_translate_text", text="AI翻译", icon='OUTLINER_OB_LIGHT')
     
     # 输出文本框（只有在有翻译结果时才显示）
     if props.translate_output_text:
@@ -1570,6 +1571,38 @@ class RT_OT_TranslateText(Operator):
         
         return {'FINISHED'}
 
+class RT_OT_AITranslateText(Operator):
+    """AI翻译文本操作符 / AI Translate Text Operator"""
+    bl_idname = "rt.ai_translate_text"
+    bl_label = "AI翻译"
+    bl_description = "使用Doubao AI翻译输入的文本"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        
+        if not props.translate_input_text.strip():
+            show_message_box("请输入要翻译的文本", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        try:
+            # 调用AI翻译工具函数
+            result = ai_translate_text_tool(
+                props.translate_input_text,
+                "我现在需要为unity游戏角色动作进行英文命名,我输入中文,你回复我英文结果,请确保英文结果简洁准确干练,不要有太多的字数,尽量使用单个单词概括.结果不包含任何符号(包括_)和空格,首字母使用小写,后续驼峰可以大写开头"
+            )
+            
+            # 将翻译结果设置到输出文本框
+            props.translate_output_text = result
+            
+            show_message_box("AI翻译完成", "信息", 'INFO')
+            
+        except Exception as e:
+            show_message_box(f"AI翻译失败: {str(e)}", "错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        return {'FINISHED'}
+
 class RT_OT_ApplyTranslationToObjects(Operator):
     """将翻译结果应用到选中物体 / Apply Translation to Selected Objects"""
     bl_idname = "rt.apply_translation_to_objects"
@@ -1708,6 +1741,7 @@ classes = [
     RT_OT_CreateAnnotations,
     RT_OT_ClearAnnotations,
     RT_OT_TranslateText,
+    RT_OT_AITranslateText,
     RT_OT_ApplyTranslationToObjects,
     RT_OT_TextureManagerPopup,
     RT_PT_TextureRenamerPanel,

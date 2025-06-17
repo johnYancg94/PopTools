@@ -25,6 +25,14 @@ except ImportError:
     SDK_AVAILABLE = False
     print("[翻译工具] 腾讯云SDK未安装，请运行: pip install tencentcloud-sdk-python")
 
+# 尝试导入OpenAI SDK（用于Doubao）
+try:
+    from openai import OpenAI
+    OPENAI_SDK_AVAILABLE = True
+except ImportError:
+    OPENAI_SDK_AVAILABLE = False
+    print("[翻译工具] OpenAI SDK未安装，请运行: pip install --upgrade 'openai>=1.0'")
+
 # 腾讯云翻译API配置
 class TencentTranslateAPI:
     """腾讯云翻译API封装类"""
@@ -157,7 +165,108 @@ class TencentTranslateAPI:
             error_detail = f"未知错误: {str(e)}\n请检查插件配置或联系开发者"
             print(f"[翻译调试] {error_detail}")
             return {"error": error_detail}
+
+
+# Doubao AI翻译API配置
+class DoubaoTranslateAPI:
+    """Doubao AI翻译API封装类"""
     
+    def __init__(self, api_key="", base_url="https://ark.cn-beijing.volces.com/api/v3", model="doubao-1.5-lite-32k-250115"):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+        
+        # 检查SDK是否可用
+        if not OPENAI_SDK_AVAILABLE:
+            raise ImportError("OpenAI SDK未安装，请运行: pip install --upgrade 'openai>=1.0'")
+            
+        # 初始化客户端
+        self._init_client()
+        
+    def _init_client(self):
+        """初始化OpenAI客户端"""
+        try:
+            # 验证API密钥
+            print(f"[调试] DoubaoTranslateAPI._init_client: api_key='{self.api_key[:8]}...' if self.api_key else 'None'")
+            
+            if not self.api_key:
+                raise Exception(f"API密钥不能为空: api_key='{self.api_key}'")
+            
+            if not self.api_key.strip():
+                raise Exception(f"API密钥不能为空白字符: api_key='{self.api_key}'")
+            
+            # 初始化OpenAI客户端
+            self.client = OpenAI(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+            
+        except Exception as e:
+            raise Exception(f"初始化Doubao客户端失败: {str(e)}")
+    
+    @classmethod
+    def from_preferences(cls):
+        """从插件首选项创建API实例"""
+        prefs = bpy.context.preferences.addons[__package__].preferences
+        
+        # 首先尝试从解密方法获取API密钥
+        api_key = prefs.get_decrypted_doubao_api_key()
+        
+        if not api_key:
+            # 如果解密失败，尝试从环境变量获取
+            api_key = os.getenv('ARK_API_KEY')
+        
+        print(f"[调试] from_preferences: doubao_api_key='{api_key[:8]}...' if api_key else 'None'")
+        
+        return cls(
+            api_key=api_key,
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            model="doubao-1.5-lite-32k-250115"
+        )
+    
+    def translate_text(self, text, system_prompt=None):
+        """使用AI翻译文本"""
+        # 验证API密钥
+        if not self.api_key:
+            return {"error": "请配置Doubao API密钥（ARK_API_KEY环境变量）"}
+            
+        if not self.api_key.strip():
+            return {"error": "API密钥不能为空，请检查ARK_API_KEY环境变量"}
+            
+        # 默认系统提示词
+        if system_prompt is None:
+            system_prompt = "请将输入的中文动作名称翻译为简洁的英文。要求:\n1. 尽量使用单个单词\n2. 必须简洁精确只表达最核心的语义即可\n3. 不含任何符号和空格\n4. 首字母小写\n5. 多词组合时,首字母小写,后续单词首字母大写,例如: walkRunFast"
+            
+        print(f"[AI翻译调试] 开始翻译: '{text}'")
+        print(f"[AI翻译调试] 使用模型: {self.model}")
+        print(f"[AI翻译调试] API Key: {self.api_key[:8]}...")
+            
+        try:
+            # 调用Doubao API
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text},
+                ],
+            )
+            
+            print(f"[AI翻译调试] API响应成功")
+            
+            # 解析响应
+            translated_text = completion.choices[0].message.content.strip()
+            print(f"[AI翻译调试] 翻译成功: '{translated_text}'")
+            
+            return {
+                "translated_text": translated_text,
+                "source_lang": "zh",
+                "target_lang": "en"
+            }
+                
+        except Exception as e:
+            error_detail = f"AI翻译错误: {str(e)}"
+            print(f"[AI翻译调试] {error_detail}")
+            return {"error": error_detail}
 
 
 # 翻译工具属性组
@@ -266,6 +375,43 @@ class POPTOOLS_OT_translate_text(Operator):
         else:
             settings.output_text = result["translated_text"]
             show_message_box("翻译完成！", "成功", 'INFO')
+            return {'FINISHED'}
+
+class POPTOOLS_OT_ai_translate_text(Operator):
+    """AI翻译文本操作符"""
+    bl_idname = "poptools.ai_translate_text"
+    bl_label = "AI翻译文本"
+    bl_description = "使用Doubao AI翻译文本"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        settings = context.scene.poptools_props.translation_tools
+        
+        # 检查OpenAI SDK是否可用
+        if not OPENAI_SDK_AVAILABLE:
+            show_message_box("OpenAI SDK未安装\n请运行: pip install --upgrade 'openai>=1.0'", "SDK错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        if not settings.input_text.strip():
+            show_message_box("请输入要翻译的文本", "错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        try:
+            # 从插件首选项创建AI翻译API实例
+            translator = DoubaoTranslateAPI.from_preferences()
+        except Exception as e:
+            show_message_box(f"AI API配置错误: {str(e)}", "配置错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 执行AI翻译
+        result = translator.translate_text(text=settings.input_text)
+        
+        if "error" in result:
+            show_message_box(result["error"], "AI翻译错误", 'ERROR')
+            return {'CANCELLED'}
+        else:
+            settings.output_text = result["translated_text"]
+            show_message_box("AI翻译完成！", "成功", 'INFO')
             return {'FINISHED'}
 
 class POPTOOLS_OT_batch_translate_objects(Operator):
@@ -396,6 +542,56 @@ def translate_text_tool(input_text, source_lang='zh', target_lang='en', secret_i
         traceback.print_exc()
         return input_text  # 翻译失败时返回原文本
 
+def ai_translate_text_tool(input_text, system_prompt=None):
+    """AI翻译工具函数，供其他模块调用
+    
+    Args:
+        input_text (str): 要翻译的文本
+        system_prompt (str): 系统提示词，如果为None则使用默认提示词
+    
+    Returns:
+        str: 翻译后的文本，如果翻译失败返回原文本
+    """
+    # 检查输入文本
+    if not input_text or not input_text.strip():
+        return ""
+    
+    # 检查OpenAI SDK是否可用
+    if not OPENAI_SDK_AVAILABLE:
+        print("[AI翻译工具] OpenAI SDK未安装，请运行: pip install --upgrade 'openai>=1.0'")
+        return input_text
+    
+    try:
+        # 从环境变量或插件首选项获取API配置
+        api = DoubaoTranslateAPI.from_preferences()
+        print(f"[AI翻译工具] 从配置获取API")
+        
+        print(f"[AI翻译工具] 开始AI翻译: '{input_text}'")
+        result = api.translate_text(input_text, system_prompt)
+        print(f"[AI翻译工具] API返回结果: {result}")
+        
+        # 检查返回结果是否包含错误
+        if isinstance(result, dict):
+            if "error" in result:
+                print(f"[AI翻译工具] AI翻译API错误: {result['error']}")
+                return input_text  # 翻译失败时返回原文本
+            elif "translated_text" in result:
+                translated = result["translated_text"]
+                print(f"[AI翻译工具] AI翻译成功: '{translated}'")
+                return translated  # 返回翻译后的文本字符串
+            else:
+                print(f"[AI翻译工具] AI翻译API返回格式错误，完整结果: {result}")
+                return input_text
+        else:
+            # 如果返回的不是字典，直接返回
+            print(f"[AI翻译工具] API返回非字典类型: {type(result)}, 值: {result}")
+            return str(result)
+    except Exception as e:
+        print(f"[AI翻译工具] AI翻译失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return input_text  # 翻译失败时返回原文本
+
 class POPTOOLS_OT_swap_languages(Operator):
     """交换源语言和目标语言"""
     bl_idname = "poptools.swap_languages"
@@ -424,6 +620,7 @@ class POPTOOLS_OT_swap_languages(Operator):
 classes = [
     TranslationToolsSettings,
     POPTOOLS_OT_translate_text,
+    POPTOOLS_OT_ai_translate_text,
     POPTOOLS_OT_batch_translate_objects,
     POPTOOLS_OT_clear_translation,
     POPTOOLS_OT_swap_languages,

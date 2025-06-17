@@ -56,10 +56,22 @@ class POPTOOLS_OT_unlock_api_keys(Operator):
             # 尝试解密并自动填入密钥
             secret_id = prefs.get_decrypted_secret_id()
             secret_key = prefs.get_decrypted_secret_key()
+            doubao_api_key = prefs.get_decrypted_doubao_api_key()
             
+            success_count = 0
             if secret_id and secret_key:
-                self.report({'INFO'}, "API密钥解锁成功并已自动填入")
-                print(f"[解锁成功] Secret ID: {secret_id[:8]}..., Secret Key: {secret_key[:8]}...")
+                success_count += 1
+                print(f"[解锁成功] 腾讯云 Secret ID: {secret_id[:8]}..., Secret Key: {secret_key[:8]}...")
+            
+            if doubao_api_key:
+                success_count += 1
+                print(f"[解锁成功] Doubao API Key: {doubao_api_key[:8]}...")
+            
+            if success_count > 0:
+                if success_count == 2:
+                    self.report({'INFO'}, "所有API密钥解锁成功并已自动填入")
+                else:
+                    self.report({'INFO'}, "部分API密钥解锁成功并已自动填入")
                 return {'FINISHED'}
             else:
                 self.report({'ERROR'}, "密码错误或密钥未配置，请检查密码或联系插件作者")
@@ -161,6 +173,82 @@ class POPTOOLS_OT_check_sdk_status(Operator):
             self.report({'WARNING'}, f"SDK检测失败：腾讯云SDK未安装或安装不完整 - {str(e)}")
         except Exception as e:
             self.report({'ERROR'}, f"SDK检测过程中发生错误：{str(e)}")
+            
+        return {'FINISHED'}
+
+class POPTOOLS_OT_install_openai_sdk(Operator):
+    """安装OpenAI SDK"""
+    bl_idname = "poptools.install_openai_sdk"
+    bl_label = "安装OpenAI SDK"
+    bl_description = "自动安装OpenAI Python SDK（用于Doubao AI翻译）"
+    bl_options = {'REGISTER'}
+    
+    def execute(self, context):
+        try:
+            # 获取Python可执行文件路径
+            python_exe = sys.executable
+            
+            # 安装OpenAI SDK
+            self.report({'INFO'}, "正在安装OpenAI SDK，请稍候...")
+            
+            # 使用subprocess运行pip install命令
+            result = subprocess.run(
+                [python_exe, "-m", "pip", "install", "--upgrade", "openai>=1.0"],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5分钟超时
+            )
+            
+            if result.returncode == 0:
+                self.report({'INFO'}, "OpenAI SDK安装成功！请重启Blender以使用AI翻译功能。")
+                # 设置安装成功标志
+                context.preferences.addons[__package__].preferences.openai_sdk_install_success = True
+                # 强制刷新UI以显示重启提示
+                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                # 强制更新首选项面板
+                for area in context.screen.areas:
+                    if area.type == 'PREFERENCES':
+                        area.tag_redraw()
+            else:
+                error_msg = result.stderr if result.stderr else "未知错误"
+                self.report({'ERROR'}, f"OpenAI SDK安装失败: {error_msg}")
+                
+        except subprocess.TimeoutExpired:
+            self.report({'ERROR'}, "安装超时，请检查网络连接后重试")
+        except Exception as e:
+            self.report({'ERROR'}, f"安装过程中发生错误: {str(e)}")
+            
+        return {'FINISHED'}
+
+class POPTOOLS_OT_check_openai_sdk_status(Operator):
+    """手动检测OpenAI SDK状态"""
+    bl_idname = "poptools.check_openai_sdk_status"
+    bl_label = "检测OpenAI SDK状态"
+    bl_description = "手动检测OpenAI SDK是否已正确安装"
+    bl_options = {'REGISTER'}
+    
+    def execute(self, context):
+        prefs = context.preferences.addons[__package__].preferences
+        
+        try:
+            # 尝试导入OpenAI SDK
+            import openai
+            
+            # SDK导入成功，重置安装标志
+            prefs.openai_sdk_install_success = False
+            
+            # 强制刷新UI
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            for area in context.screen.areas:
+                if area.type == 'PREFERENCES':
+                    area.tag_redraw()
+            
+            self.report({'INFO'}, "OpenAI SDK检测成功！OpenAI SDK已正确安装并可以使用")
+            
+        except ImportError as e:
+            self.report({'WARNING'}, f"OpenAI SDK检测失败：OpenAI SDK未安装或安装不完整 - {str(e)}")
+        except Exception as e:
+            self.report({'ERROR'}, f"OpenAI SDK检测过程中发生错误：{str(e)}")
             
         return {'FINISHED'}
 
@@ -269,7 +357,7 @@ class PopToolsPreferences(AddonPreferences):
     
     def get_decrypted_secret_id(self):
         """获取解密后的Secret ID"""
-        from .crypto_utils import get_decrypted_api_key
+        from .encryption_utils import get_decrypted_api_key
         if self.api_password:
             decrypted = get_decrypted_api_key("tencent_secret_id", self.api_password)
             print(f"[调试] 解密Secret ID: 密码='{self.api_password}', 解密结果='{decrypted}'")
@@ -286,7 +374,7 @@ class PopToolsPreferences(AddonPreferences):
     
     def get_decrypted_secret_key(self):
         """获取解密后的Secret Key"""
-        from .crypto_utils import get_decrypted_api_key
+        from .encryption_utils import get_decrypted_api_key
         if self.api_password:
             decrypted = get_decrypted_api_key("tencent_secret_key", self.api_password)
             print(f"[调试] 解密Secret Key: 密码='{self.api_password}', 解密结果='{decrypted}'")
@@ -299,6 +387,23 @@ class PopToolsPreferences(AddonPreferences):
         # 如果解密失败，尝试返回手动配置的密钥
         manual_key = self.tencent_secret_key
         print(f"[调试] 使用手动配置的Secret Key: '{manual_key}'")
+        return manual_key
+    
+    def get_decrypted_doubao_api_key(self):
+        """获取解密后的Doubao API Key"""
+        from .encryption_utils import get_decrypted_api_key
+        if self.api_password:
+            decrypted = get_decrypted_api_key("doubao_api_key", self.api_password)
+            print(f"[调试] 解密Doubao API Key: 密码='{self.api_password}', 解密结果='{decrypted}'")
+            if decrypted:
+                # 解密成功，自动填入手动配置字段
+                if self.doubao_api_key != decrypted:
+                    self.doubao_api_key = decrypted
+                    print(f"[调试] 自动更新手动配置的Doubao API Key: '{decrypted}'")
+                return decrypted
+        # 如果解密失败，尝试返回手动配置的密钥
+        manual_key = self.doubao_api_key
+        print(f"[调试] 使用手动配置的Doubao API Key: '{manual_key}'")
         return manual_key
     
     tencent_region: EnumProperty(
@@ -321,6 +426,21 @@ class PopToolsPreferences(AddonPreferences):
     sdk_install_success: BoolProperty(
         name="SDK安装成功",
         description="标记SDK是否安装成功",
+        default=False
+    )
+    
+    # Doubao AI翻译配置
+    doubao_api_key: StringProperty(
+        name="Doubao API Key",
+        description="Doubao AI翻译API密钥（ARK_API_KEY）",
+        default="",
+        subtype='PASSWORD'
+    )
+    
+    # OpenAI SDK安装成功标志
+    openai_sdk_install_success: BoolProperty(
+        name="OpenAI SDK安装成功",
+        description="标记OpenAI SDK是否安装成功",
         default=False
     )
     
@@ -359,13 +479,37 @@ class PopToolsPreferences(AddonPreferences):
                 
                 # API配置状态检查
                 if self.api_password:
-                    from .crypto_utils import get_decrypted_api_key
+                    from .encryption_utils import get_decrypted_api_key
                     secret_id = get_decrypted_api_key("tencent_secret_id", self.api_password)
                     secret_key = get_decrypted_api_key("tencent_secret_key", self.api_password)
+                    doubao_api_key = get_decrypted_api_key("doubao_api_key", self.api_password)
                     
+                    # 统计解锁成功的密钥数量
+                    success_count = 0
                     if secret_id and secret_key:
+                        success_count += 1
+                    if doubao_api_key:
+                        success_count += 1
+                    
+                    if success_count > 0:
                         row = col.row()
-                        row.label(text="✓ API密钥解锁成功,请记得保存首选项", icon='CHECKMARK')
+                        if success_count == 2:
+                            row.label(text="✓ 所有API密钥解锁成功,请记得保存首选项", icon='CHECKMARK')
+                        else:
+                            row.label(text="✓ 部分API密钥解锁成功,请记得保存首选项", icon='CHECKMARK')
+                        
+                        # 显示具体解锁状态
+                        status_box = col.box()
+                        status_col = status_box.column(align=True)
+                        status_col.label(text="解锁状态:", icon='INFO')
+                        if secret_id and secret_key:
+                            status_col.label(text="• 腾讯云API: ✓ 已解锁")
+                        else:
+                            status_col.label(text="• 腾讯云API: ✗ 未解锁")
+                        if doubao_api_key:
+                            status_col.label(text="• Doubao AI API: ✓ 已解锁")
+                        else:
+                            status_col.label(text="• Doubao AI API: ✗ 未解锁")
                     else:
                         row = col.row()
                         row.alert = True
@@ -387,8 +531,19 @@ class PopToolsPreferences(AddonPreferences):
                 manual_box = col.box()
                 manual_col = manual_box.column()
                 manual_col.label(text="手动配置API密钥（可选）:", icon='TOOL_SETTINGS')
-                manual_col.prop(self, "tencent_secret_id")
-                manual_col.prop(self, "tencent_secret_key")
+                
+                # 腾讯云API配置
+                tencent_box = manual_col.box()
+                tencent_col = tencent_box.column()
+                tencent_col.label(text="腾讯云翻译API:", icon='WORLD')
+                tencent_col.prop(self, "tencent_secret_id")
+                tencent_col.prop(self, "tencent_secret_key")
+                
+                # Doubao AI API配置
+                doubao_box = manual_col.box()
+                doubao_col = doubao_box.column()
+                doubao_col.label(text="Doubao AI翻译API:", icon='OUTLINER_OB_LIGHT')
+                doubao_col.prop(self, "doubao_api_key")
                 
                 # 地域设置
                 col.separator()
@@ -430,6 +585,73 @@ class PopToolsPreferences(AddonPreferences):
                 # 手动安装提示
                 row = col.row()
                 row.label(text="或手动运行: pip install tencentcloud-sdk-python")
+            
+            # Doubao AI翻译配置
+            col.separator()
+            ai_box = box.box()
+            ai_box.label(text="Doubao AI翻译配置:", icon='OUTLINER_OB_LIGHT')
+            
+            # OpenAI SDK状态检查
+            try:
+                import openai
+                openai_sdk_available = True
+            except ImportError:
+                openai_sdk_available = False
+            
+            ai_col = ai_box.column()
+            if openai_sdk_available and not self.openai_sdk_install_success:
+                row = ai_col.row()
+                row.label(text="✓ OpenAI SDK已安装", icon='CHECKMARK')
+                
+                # API密钥配置
+                ai_col.separator()
+                ai_col.label(text="Doubao API密钥配置:", icon='KEY_HLT')
+                ai_col.prop(self, "doubao_api_key")
+                
+                # 配置说明
+                help_box = ai_col.box()
+                help_col = help_box.column(align=True)
+                help_col.label(text="配置说明:", icon='INFO')
+                help_col.label(text="• 请在豆包官网申请API密钥")
+                help_col.label(text="• 或设置环境变量 ARK_API_KEY")
+                help_col.label(text="• AI翻译专为游戏角色动作命名优化")
+                
+            elif self.openai_sdk_install_success:
+                # OpenAI SDK安装成功，显示重启按钮
+                row = ai_col.row()
+                row.label(text="✓ OpenAI SDK安装成功", icon='CHECKMARK')
+                
+                row = ai_col.row()
+                row.alert = True
+                row.label(text="请重启Blender以使用AI翻译功能", icon='INFO')
+                
+                # 按钮行：重启和手动检测
+                button_row = ai_col.row(align=True)
+                button_row.scale_y = 1.3
+                
+                # 重启按钮
+                restart_btn = button_row.row()
+                restart_btn.scale_x = 2.0
+                restart_btn.operator("poptools.restart_blender", text="保存配置并重启Blender", icon='FILE_REFRESH')
+                
+                # 手动检测按钮
+                check_btn = button_row.row()
+                check_btn.operator("poptools.check_openai_sdk_status", text="手动检测OpenAI SDK", icon='VIEWZOOM')
+                
+            else:
+                # OpenAI SDK未安装
+                row = ai_col.row()
+                row.alert = True
+                row.label(text="⚠ OpenAI SDK未安装", icon='ERROR')
+                
+                # 安装按钮
+                row = ai_col.row()
+                row.scale_y = 1.2
+                row.operator("poptools.install_openai_sdk", text="自动安装OpenAI SDK", icon='IMPORT')
+                
+                # 手动安装提示
+                row = ai_col.row()
+                row.label(text="或手动运行: pip install --upgrade openai>=1.0")
         
         # 模块启用设置
         box = layout.box()
@@ -571,6 +793,8 @@ classes = (
     POPTOOLS_OT_install_tencent_sdk,
     POPTOOLS_OT_restart_blender,
     POPTOOLS_OT_check_sdk_status,
+    POPTOOLS_OT_install_openai_sdk,
+    POPTOOLS_OT_check_openai_sdk_status,
     PopToolsPreferences,
 )
 
