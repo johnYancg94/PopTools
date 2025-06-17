@@ -76,57 +76,6 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
     # 分隔线
     layout.separator()
     
-    # 智能重命名部分 - 可折叠
-    box = layout.box()
-    # 标题行，包含折叠按钮
-    header_row = box.row(align=True)
-    if props_main.show_island_rename_box:
-        header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_DOWN', emboss=False)
-    else:
-        header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
-    header_row.label(text="海岛配方道具智能重命名")
-    
-    # 只有在展开状态下才显示内容
-    if props_main.show_island_rename_box:
-        row = box.row()
-        row.prop(props, "item_land", text="海岛名")
-        
-        # 帮助说明控制（仅在固定面板中显示）
-        if show_help_section:
-            help_row = box.row(align=True)
-            if props_main.show_retex_help:
-                help_row.operator("rt.toggle_retex_help", text="隐藏说明", icon='HIDE_ON')
-                
-                # 显示说明内容
-                help_box = box.box()
-                help_box.label(text="说明：")
-                help_box.label(text="步骤:")
-                help_box.label(text="1. 命名前标注:")
-                help_box.label(text="   - b1,b2... 为气球")
-                help_box.label(text="   - 也可以1b,2b,...数字加字母就可以")
-                help_box.label(text="   - h1,h2... 为手持")
-                help_box.label(text="   以此类推")
-                help_box.label(text="")
-                help_box.label(text="2. 同一个海岛的序号不能重复")
-                help_box.label(text="   正确排序方式如: b1,h2,h3,p4")
-                help_box.label(text="")
-                help_box.label(text="3. 标注完成后选择该海岛所有道具,")
-                help_box.label(text="   点击【智能重命名】即可")
-            else:
-                help_row.operator("rt.toggle_retex_help", text="显示说明", icon='HIDE_OFF')
-        
-        # 类型标识符说明
-        note_box = box.box()
-        note_box.label(text="类型标识符说明：")
-        note_box.label(text="b：气球 h：手持 p：堂食 c：头戴")
-        
-        # 重命名按钮
-        row = box.row(align=True)
-        row.operator("rt.smart_rename_objects", text="智能重命名选中物体", icon='OUTLINER_OB_MESH')
-    
-    # 分隔线
-    layout.separator()
-    
     # 打包贴图部分
     pack_box = layout.box()
     row = pack_box.row()
@@ -169,6 +118,31 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
         row = layout.row()
         row.operator("rt.resize_textures", text="调整纹理大小", icon='IMAGE_DATA')
         
+        # 添加海岛配方道具智能重命名部分 - 可折叠
+        layout.separator()
+        island_box = layout.box()
+        # 标题行，包含折叠按钮
+        header_row = island_box.row(align=True)
+        if props_main.show_island_rename_box:
+            header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_DOWN', emboss=False)
+        else:
+            header_row.operator("rt.toggle_island_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
+        header_row.label(text="海岛配方道具智能重命名")
+        
+        # 只有在展开状态下才显示内容
+        if props_main.show_island_rename_box:
+            row = island_box.row()
+            row.prop(props, "item_land", text="海岛名")
+            
+            # 类型标识符说明
+            note_box = island_box.box()
+            note_box.label(text="类型标识符说明：")
+            note_box.label(text="b：气球 h：手持 p：堂食 c：头戴")
+            
+            # 重命名按钮
+            row = island_box.row(align=True)
+            row.operator("rt.smart_rename_objects", text="智能重命名选中物体", icon='OUTLINER_OB_MESH')
+
         # 添加角色重命名部分 - 可折叠
         layout.separator()
         char_box = layout.box()

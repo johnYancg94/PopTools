@@ -142,7 +142,7 @@ ANIMATION_TYPES = [
     ("move_run", "跑", "跑步动画"),
     ("play_chat", "人物交互", "人物交互动画"),
     ("play_control", "物件交互", "物件交互动画"),
-    ("npc_island", "海岛动画", "海岛NPC动画"),
+    ("npc_island", "海岛NPC动画", "海岛NPC动画"),
 ]
 
 class POPTOOLS_OT_set_animation_type(Operator):
