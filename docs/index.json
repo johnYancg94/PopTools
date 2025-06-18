@@ -7,7 +7,7 @@
       "id": "poptools",
       "name": "PopTools - 蜂鸟工具箱",
       "tagline": "专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理",
-      "version": "3.4.1",
+      "version": "3.4.2",
       "type": "add-on",
       "maintainer": "johnYancg94",
       "license": [
@@ -27,8 +27,8 @@
         "Animation"
       ],
       "archive_url": "./PopTools.zip",
-      "archive_size": 66747,
-      "archive_hash": "sha256:d06636211cdd5eab3ebd0606944fd84847847862d9458ecbe088f2c5af988930"
+      "archive_size": 66746,
+      "archive_hash": "sha256:92340847bc030f6e55cbd8f80ec021c2e0cebb5b12c9432dfc43467e16ea2e23"
     }
   ]
 }
