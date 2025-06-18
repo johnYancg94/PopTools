@@ -5,6 +5,8 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ## 版本更新日志 / Version Changelog
+### 3.4.2 (2025)
+- **优化**: 道具命名改为buildtools
 ### 3.4.1 (2025)
 - **新增功能**: 加入AI翻译模块，支持腾讯云和豆包AI双引擎翻译
 - **智能翻译**: 更准确简洁的翻译结果，专为游戏资产命名优化

@@ -1046,7 +1046,7 @@ class RT_OT_RenameCharacterTool(Operator):
         for obj in selected_objects:
             if obj.type == 'MESH':
                 # 构建新名称：mesh_tool_体型_序号后缀
-                new_name = f"mesh_tool_{body_type}_{serial_number}{suffix}"
+                new_name = f"mesh_buildtools_{body_type}_{serial_number}{suffix}"
                 obj.name = new_name
                 # 同步设置物体的data name
                 if obj.data:
