@@ -116,7 +116,8 @@ class VTBB_OT_BindEmptiesToVertices(Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         
         # 创建bmesh实例
-        bm = bmesh.from_mesh(target_mesh.data)
+        bm = bmesh.new()
+        bm.from_mesh(target_mesh.data)
         bm.verts.ensure_lookup_table()
         
         # 退出编辑模式
@@ -189,7 +190,8 @@ class VTBB_OT_BakeVertexWeights(Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         
         # 创建bmesh实例
-        bm = bmesh.from_mesh(target_mesh.data)
+        bm = bmesh.new()
+        bm.from_mesh(target_mesh.data)
         bm.verts.ensure_lookup_table()
         
         # 退出编辑模式

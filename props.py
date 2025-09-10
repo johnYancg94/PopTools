@@ -469,6 +469,43 @@ class ReTexSettings(bpy.types.PropertyGroup):
         default=""
     )
     
+    # minigame重命名相关属性
+    minigame_gameplay: EnumProperty(
+        name="玩法",
+        description="选择游戏玩法",
+        items=[
+            ('cleanup', "清洁", "清洁小游戏"),
+        ],
+        default='cleanup'
+    )
+    
+    minigame_scene: EnumProperty(
+        name="场景",
+        description="选择游戏场景",
+        items=[
+            ('bedroom', "卧室", "卧室场景"),
+            ('livingroom', "客厅", "客厅场景"),
+        ],
+        default='bedroom'
+    )
+    
+    minigame_item_name: StringProperty(
+        name="物品名称",
+        description="输入物品名称",
+        default=""
+    )
+    
+    minigame_texture_type: EnumProperty(
+        name="贴图类型",
+        description="选择贴图类型",
+        items=[
+            ('normal', "普通", "普通贴图"),
+            ('clean', "干净", "干净状态贴图"),
+            ('dust', "污渍", "污渍状态贴图"),
+        ],
+        default='normal'
+    )
+    
     # 移除序号选择，改为自动递增
     
     # UV检查相关属性
@@ -677,6 +714,12 @@ class PopToolsProperties(bpy.types.PropertyGroup):
     show_building_rename_box: BoolProperty(
         name="显示建筑重命名",
         description="控制建筑重命名框的展开/收起",
+        default=False
+    )
+    
+    show_minigame_rename_box: BoolProperty(
+        name="显示minigame重命名",
+        description="控制minigame重命名框的展开/收起",
         default=False
     )
 

@@ -303,6 +303,62 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
             row = building_box.row(align=True)
             row.scale_y = 1.5
             row.operator("rt.auto_name_bake_models", text="烘焙高低模自动命名", icon='MESH_DATA')
+        
+        # 添加minigame重命名部分 - 可折叠
+        layout.separator()
+        minigame_box = layout.box()
+        # 标题行，包含折叠按钮
+        header_row = minigame_box.row(align=True)
+        if props_main.show_minigame_rename_box:
+            header_row.operator("rt.toggle_minigame_rename_box", text="", icon='TRIA_DOWN', emboss=False)
+        else:
+            header_row.operator("rt.toggle_minigame_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
+        header_row.label(text="minigame重命名")
+        
+        # 只有在展开状态下才显示内容
+        if props_main.show_minigame_rename_box:
+            # 玩法选择按钮组
+            gameplay_label_row = minigame_box.row()
+            gameplay_label_row.label(text="玩法:")
+            gameplay_row = minigame_box.row(align=True)
+            # 清洁按钮
+            op_cleanup = gameplay_row.operator("rt.set_minigame_gameplay", text="清洁", depress=(props.minigame_gameplay == 'cleanup'))
+            op_cleanup.gameplay_type = 'cleanup'
+            
+            # 场景选择按钮组
+            scene_label_row = minigame_box.row()
+            scene_label_row.label(text="场景:")
+            scene_row = minigame_box.row(align=True)
+            # 卧室按钮
+            op_bedroom = scene_row.operator("rt.set_minigame_scene", text="卧室", depress=(props.minigame_scene == 'bedroom'))
+            op_bedroom.scene_type = 'bedroom'
+            # 客厅按钮
+            op_livingroom = scene_row.operator("rt.set_minigame_scene", text="客厅", depress=(props.minigame_scene == 'livingroom'))
+            op_livingroom.scene_type = 'livingroom'
+            
+            # 物品名称输入
+            item_row = minigame_box.row(align=True)
+            item_row.prop(props, "minigame_item_name", text="物品名称")
+            
+            # 贴图类型选择按钮组
+            texture_label_row = minigame_box.row()
+            texture_label_row.label(text="贴图类型:")
+            texture_row = minigame_box.row(align=True)
+            # 普通按钮
+            op_normal = texture_row.operator("rt.set_minigame_texture_type", text="普通", depress=(props.minigame_texture_type == 'normal'))
+            op_normal.texture_type = 'normal'
+            # 干净按钮
+            op_clean = texture_row.operator("rt.set_minigame_texture_type", text="干净", depress=(props.minigame_texture_type == 'clean'))
+            op_clean.texture_type = 'clean'
+            # 污渍按钮
+            op_dust = texture_row.operator("rt.set_minigame_texture_type", text="污渍", depress=(props.minigame_texture_type == 'dust'))
+            op_dust.texture_type = 'dust'
+            
+            # 按钮行
+            button_row = minigame_box.row(align=True)
+            button_row.scale_y = 1.5
+            button_row.operator("rt.minigame_rename_model", text="模型自动命名", icon='OBJECT_DATA')
+            button_row.operator("rt.minigame_rename_pbr_texture", text="PBR贴图自动命名", icon='MATERIAL')
 # ============================================================================
 # 操作符定义 / Operator Definitions
 # ============================================================================
@@ -365,6 +421,72 @@ class RT_OT_ToggleBuildingRenameBox(Operator):
     def execute(self, context):
         props = context.scene.poptools_props
         props.show_building_rename_box = not props.show_building_rename_box
+        return {'FINISHED'}
+
+class RT_OT_ToggleMinigameRenameBox(Operator):
+    """切换minigame重命名框的显示/隐藏"""
+    bl_idname = "rt.toggle_minigame_rename_box"
+    bl_label = "切换minigame重命名框"
+    bl_description = "切换minigame重命名框的展开/收起状态"
+    bl_options = {'REGISTER'}
+    
+    def execute(self, context):
+        props = context.scene.poptools_props
+        props.show_minigame_rename_box = not props.show_minigame_rename_box
+        return {'FINISHED'}
+
+class RT_OT_SetMinigameGameplay(Operator):
+    """设置minigame玩法类型"""
+    bl_idname = "rt.set_minigame_gameplay"
+    bl_label = "设置玩法类型"
+    bl_description = "设置当前选择的玩法类型"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    gameplay_type: StringProperty(
+        name="玩法类型",
+        description="要设置的玩法类型",
+        default="cleanup"
+    )
+    
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        props.minigame_gameplay = self.gameplay_type
+        return {'FINISHED'}
+
+class RT_OT_SetMinigameScene(Operator):
+    """设置minigame场景类型"""
+    bl_idname = "rt.set_minigame_scene"
+    bl_label = "设置场景类型"
+    bl_description = "设置当前选择的场景类型"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    scene_type: StringProperty(
+        name="场景类型",
+        description="要设置的场景类型",
+        default="bedroom"
+    )
+    
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        props.minigame_scene = self.scene_type
+        return {'FINISHED'}
+
+class RT_OT_SetMinigameTextureType(Operator):
+    """设置minigame贴图类型"""
+    bl_idname = "rt.set_minigame_texture_type"
+    bl_label = "设置贴图类型"
+    bl_description = "设置当前选择的贴图类型"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    texture_type: StringProperty(
+        name="贴图类型",
+        description="要设置的贴图类型",
+        default="normal"
+    )
+    
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        props.minigame_texture_type = self.texture_type
         return {'FINISHED'}
 
 class RT_OT_SmartRenameObjects(Operator):
@@ -938,7 +1060,7 @@ class RT_OT_RenameAnimal(Operator):
                 # 获取后缀 (动物重命名也使用角色后缀，如果需要区分，可以添加新的动物后缀属性)
                 suffix = props.character_suffix # 或者创建一个 animal_suffix
                 # 构建新名称
-                base_name = f"mesh_animals_{body_type}_{serial_number}"
+                base_name = f"mesh_special_{body_type}_{serial_number}"
                 new_name = f"{base_name}_{suffix}" if suffix else base_name
                 obj.name = new_name
                 # 同步设置物体的data name
@@ -1496,6 +1618,247 @@ class RT_OT_ClearAnnotations(Operator):
         self.report({'INFO'}, f"成功清理 {count} 个标注对象。")
         return {'FINISHED'}
 
+class RT_OT_MinigameRenameModel(Operator):
+    """minigame模型自动命名 / Minigame Model Auto Rename"""
+    bl_idname = "rt.minigame_rename_model"
+    bl_label = "模型自动命名"
+    bl_description = "根据玩法、场景、物品名称对选中模型进行重命名"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        selected_objects = bpy.context.selected_objects
+        
+        # 获取用户输入
+        gameplay = props.minigame_gameplay
+        scene = props.minigame_scene
+        item_name = props.minigame_item_name.strip()
+        
+        # 验证输入
+        if not item_name:
+            show_message_box("请输入物品名称", "输入错误", 'ERROR')
+            return {'CANCELLED'}
+        
+        if not selected_objects:
+            show_message_box("请先选择要重命名的模型", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 过滤出网格对象
+        mesh_objects = [obj for obj in selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            show_message_box("选中的对象中没有网格对象", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 英文映射
+        gameplay_mapping = {
+            'cleanup': 'cleanupminigame'
+        }
+        
+        scene_mapping = {
+            'bedroom': 'bedroom',
+            'livingroom': 'livingroom'
+        }
+        
+        # 获取英文名称
+        gameplay_en = gameplay_mapping.get(gameplay, gameplay)
+        scene_en = scene_mapping.get(scene, scene)
+        
+        total_renamed = 0
+        errors = []
+        
+        for obj in mesh_objects:
+            # 构建新名称：mesh_玩法_场景_物品名称
+            new_name = f"mesh_{gameplay_en}_{scene_en}_{item_name}"
+            
+            # 检查新名称是否已存在，如果存在则添加数字后缀
+            original_name = new_name
+            counter = 1
+            while new_name in bpy.data.objects:
+                new_name = f"{original_name}_{counter:02d}"
+                counter += 1
+            
+            try:
+                # 重命名对象
+                old_name = obj.name
+                obj.name = new_name
+                
+                # 同时重命名对象数据（网格数据）
+                if obj.data:
+                    obj.data.name = new_name
+                
+                total_renamed += 1
+                
+            except Exception as e:
+                errors.append(f"对象 '{obj.name}' 重命名失败：{str(e)}")
+        
+        # 显示结果
+        if total_renamed > 0:
+            message = f"成功重命名 {total_renamed} 个模型"
+            if errors:
+                message += f"\n\n警告：\n" + "\n".join(errors)
+            show_message_box(message, "重命名完成", 'INFO')
+        else:
+            message = "没有模型被重命名"
+            if errors:
+                message += f"\n\n错误：\n" + "\n".join(errors)
+            show_message_box(message, "重命名失败", 'ERROR')
+        
+        return {'FINISHED'}
+
+class RT_OT_MinigameRenamePBRTexture(Operator):
+    """minigame PBR贴图自动命名 / Minigame PBR Texture Auto Rename"""
+    bl_idname = "rt.minigame_rename_pbr_texture"
+    bl_label = "PBR贴图自动命名"
+    bl_description = "根据选中模型名称和贴图类型对材质进行重命名"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        selected_objects = bpy.context.selected_objects
+        
+        # 获取用户输入
+        texture_type = props.minigame_texture_type
+        
+        if not selected_objects:
+            show_message_box("请先选择要处理的模型", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 过滤出网格对象
+        mesh_objects = [obj for obj in selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            show_message_box("选中的对象中没有网格对象", "警告", 'ERROR')
+            return {'CANCELLED'}
+        
+        # 贴图类型映射
+        texture_type_mapping = {
+            'normal': '',  # 普通时删除该词缀
+            'clean': 'clean',
+            'dust': 'dust'
+        }
+        
+        # PBR属性映射
+        pbr_mapping = {
+            'Base Color': 'diffuse',
+            'Roughness': 'roughness', 
+            'Normal': 'normal'
+        }
+        
+        total_renamed = 0
+        errors = []
+        
+        for obj in mesh_objects:
+            if not obj.data.materials:
+                errors.append(f"对象 '{obj.name}' 没有材质")
+                continue
+            
+            # 获取当前活动材质
+            active_material_index = obj.active_material_index
+            if active_material_index >= len(obj.data.materials):
+                errors.append(f"对象 '{obj.name}' 没有有效的活动材质")
+                continue
+            
+            material = obj.data.materials[active_material_index]
+            if not material or not material.use_nodes:
+                errors.append(f"对象 '{obj.name}' 的活动材质无效或未启用节点")
+                continue
+            
+            # 从模型名称中提取玩法、场景、物品名称
+            name_parts = obj.name.split('_')
+            if len(name_parts) < 4 or name_parts[0] != 'mesh':
+                errors.append(f"对象 '{obj.name}' 名称格式不正确，应为 mesh_玩法_场景_物品名称")
+                continue
+            
+            gameplay = name_parts[1]
+            scene = name_parts[2]
+            item_name = '_'.join(name_parts[3:])  # 处理物品名称可能包含下划线的情况
+            
+            # 只处理当前活动材质
+            
+            # 查找Principled BSDF节点
+            principled_node = None
+            for node in material.node_tree.nodes:
+                if node.type == 'BSDF_PRINCIPLED':
+                    principled_node = node
+                    break
+            
+            if not principled_node:
+                errors.append(f"材质 '{material.name}' 没有找到Principled BSDF节点")
+                continue
+                
+            # 检查连接到Principled BSDF的贴图节点
+            for input_socket in principled_node.inputs:
+                if input_socket.is_linked:
+                    # 获取连接的节点
+                    linked_node = input_socket.links[0].from_node
+                    
+                    # 处理直接连接的贴图节点
+                    if linked_node.type == 'TEX_IMAGE' and linked_node.image:
+                        # 确定PBR属性
+                        pbr_attribute = pbr_mapping.get(input_socket.name, input_socket.name.lower())
+                        
+                        # 构建新的贴图名称
+                        texture_type_suffix = texture_type_mapping.get(texture_type, texture_type)
+                        
+                        if texture_type == 'normal':
+                            # 普通类型：tex_玩法_场景_物品名称_PBR属性
+                            new_texture_name = f"tex_{gameplay}_{scene}_{item_name}_{pbr_attribute}"
+                        else:
+                            # 其他类型：tex_玩法_场景_物品名称_贴图类型_PBR属性
+                            new_texture_name = f"tex_{gameplay}_{scene}_{item_name}_{texture_type_suffix}_{pbr_attribute}"
+                        
+                        try:
+                            # 重命名贴图
+                            old_name = linked_node.image.name
+                            linked_node.image.name = new_texture_name
+                            total_renamed += 1
+                            
+                        except Exception as e:
+                            errors.append(f"贴图 '{linked_node.image.name}' 重命名失败：{str(e)}")
+                    
+                    # 处理通过Normal Map节点连接的法线贴图
+                    elif linked_node.type == 'NORMAL_MAP' and input_socket.name == 'Normal':
+                        # 检查Normal Map节点的Color输入是否连接了贴图
+                        if linked_node.inputs['Color'].is_linked:
+                            color_linked_node = linked_node.inputs['Color'].links[0].from_node
+                            if color_linked_node.type == 'TEX_IMAGE' and color_linked_node.image:
+                                # 这是法线贴图
+                                pbr_attribute = 'normal'
+                                
+                                # 构建新的贴图名称
+                                texture_type_suffix = texture_type_mapping.get(texture_type, texture_type)
+                                
+                                if texture_type == 'normal':
+                                    # 普通类型：tex_玩法_场景_物品名称_normal
+                                    new_texture_name = f"tex_{gameplay}_{scene}_{item_name}_{pbr_attribute}"
+                                else:
+                                    # 其他类型：tex_玩法_场景_物品名称_贴图类型_normal
+                                    new_texture_name = f"tex_{gameplay}_{scene}_{item_name}_{texture_type_suffix}_{pbr_attribute}"
+                                
+                                try:
+                                    # 重命名贴图
+                                    old_name = color_linked_node.image.name
+                                    color_linked_node.image.name = new_texture_name
+                                    total_renamed += 1
+                                    
+                                except Exception as e:
+                                    errors.append(f"法线贴图 '{color_linked_node.image.name}' 重命名失败：{str(e)}")
+        
+        # 显示结果
+        if total_renamed > 0:
+            message = f"成功重命名 {total_renamed} 个PBR贴图"
+            if errors:
+                message += f"\n\n警告：\n" + "\n".join(errors)
+            show_message_box(message, "重命名完成", 'INFO')
+        else:
+            message = "没有贴图被重命名"
+            if errors:
+                message += f"\n\n错误：\n" + "\n".join(errors)
+            show_message_box(message, "重命名失败", 'ERROR')
+        
+        return {'FINISHED'}
+
 # ============================================================================
 # 面板定义 / Panel Definitions
 # ============================================================================
@@ -1719,6 +2082,10 @@ classes = [
     RT_OT_ToggleCharacterRenameBox,
     RT_OT_ToggleAnimalRenameBox,
     RT_OT_ToggleBuildingRenameBox,
+    RT_OT_ToggleMinigameRenameBox,
+    RT_OT_SetMinigameGameplay,
+    RT_OT_SetMinigameScene,
+    RT_OT_SetMinigameTextureType,
     RT_OT_SmartRenameObjects,
     RT_OT_RenameTextures,
     RT_OT_ResizeTextures,
@@ -1740,6 +2107,8 @@ classes = [
     RT_OT_CheckUVs,
     RT_OT_CreateAnnotations,
     RT_OT_ClearAnnotations,
+    RT_OT_MinigameRenameModel,
+    RT_OT_MinigameRenamePBRTexture,
     RT_OT_TranslateText,
     RT_OT_AITranslateText,
     RT_OT_ApplyTranslationToObjects,
