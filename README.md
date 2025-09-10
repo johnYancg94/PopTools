@@ -5,6 +5,11 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ## 版本更新日志 / Version Changelog
+### 3.5.0 (2025)
+- 新增: 动物命名规则前缀从 animals 改为 special，以统一命名体系
+- 优化: 打包流程稳定性与日志输出，确保生成的 ZIP 和 JSON 文件正确移动到 docs
+- 兼容: 适配 README 和网页展示版本信息、同步扩展仓库 index.json 生成逻辑
+
 ### 3.4.2 (2025)
 - **优化**: 道具命名改为buildtools
 ### 3.4.1 (2025)

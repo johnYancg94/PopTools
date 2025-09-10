@@ -5,9 +5,9 @@
     {
       "schema_version": "1.0.0",
       "id": "poptools",
-      "name": "PopTools - 蜂鸟工具箱",
-      "tagline": "专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理",
-      "version": "3.4.2",
+      "name": "PopTools - \u8702\u9e1f\u5de5\u5177\u7bb1",
+      "tagline": "\u4e13\u4e1a\u7684Blender\u6e38\u620f\u8d44\u4ea7\u5236\u4f5c\u548c\u5bfc\u51fa\u5de5\u5177\u96c6\uff0c\u652f\u6301\u591a\u5f15\u64ce\u5bfc\u51fa\u548c\u7eb9\u7406\u7ba1\u7406",
+      "version": "3.5.0",
       "type": "add-on",
       "maintainer": "johnYancg94",
       "license": [
@@ -27,8 +27,8 @@
         "Animation"
       ],
       "archive_url": "./PopTools.zip",
-      "archive_size": 66746,
-      "archive_hash": "sha256:92340847bc030f6e55cbd8f80ec021c2e0cebb5b12c9432dfc43467e16ea2e23"
+      "archive_size": 69527,
+      "archive_hash": "sha256:4c67f0ad2b2e877dbc55a5b2b08c74f97bb99ebac859ed9d9c48cc314127f868"
     }
   ]
 }
