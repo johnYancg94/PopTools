@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "poptools"
-version = "3.5.0"
+version = "4.0.0"
 name = "PopTools - 蜂鸟工具箱"
 tagline = "专业的Blender游戏资产制作和导出工具集，支持多引擎导出和纹理管理"
 maintainer = "johnYancg94"
@@ -9,10 +9,26 @@ type = "add-on"
 
 website = "https://github.com/johnYancg94/PopTools"
 
-tags = ["3D View", "Object", "UV", "Mesh", "Import-Export", "Modeling", "Game Development", "Texture", "Animation"]
+tags = ["3D View", "Object", "UV", "Mesh", "Import-Export", "Modeling", "Material", "Animation", "Pipeline"]
 
 blender_version_min = "4.2.0"
 
 license = [
   "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+files = "Import export and process asset files"
+network = "Use online translation services when requested"
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  ".*",
+  ".git/",
+  "docs/",
+  "tests/",
+  "*.zip",
+  "*.pyc",
+  "create_package.py",
 ]

@@ -265,7 +265,6 @@ class VTBB_OT_ClearEmpties(Operator):
 # ============================================================================
 # 面板定义 / Panel Definitions
 # ============================================================================
-
 class VTBB_PT_MainPanel(Panel):
     """顶点烘焙主面板 / Vertex Baking Main Panel"""
     bl_label = "Vertex to Bone Baker"
@@ -310,15 +309,36 @@ class VTBB_PT_MainPanel(Panel):
         box.label(text="清理：")
         box.operator("vtbb.clear_empties", text="清理空物体", icon='TRASH')
         
-        # 使用说明
+        # 使用说明 - 物理烘焙到骨骼全流程（可折叠）
         box = layout.box()
-        box.label(text="使用说明：")
-        col = box.column(align=True)
-        col.label(text="1. 选择骨架对象")
-        col.label(text="2. 点击'创建空物体'")
-        col.label(text="3. 选择目标网格")
-        col.label(text="4. 点击'绑定到顶点'")
-        col.label(text="5. 点击'烘焙权重'")
+        row = box.row()
+        row.prop(props, "show_usage_instructions", 
+                icon="TRIA_DOWN" if props.show_usage_instructions else "TRIA_RIGHT", 
+                icon_only=True, emboss=False)
+        row.label(text="物理烘焙到骨骼全流程")
+        
+        if props.show_usage_instructions:
+            col = box.column(align=True)
+            col.label(text="1. 完成烘焙动画")
+            col.label(text="2. 在对应位置骨骼，骨骼数量和密度决定烘焙的精度")
+            col.label(text="3. 创建空物体，并复制骨骼位置，确保朝向一致")
+            col.label(text="4. 应用空物体的视觉变换")
+            col.label(text="5. 删除复制位置约束")
+            col.label(text="6. 绑定空物体到顶点（ctrl+P绑定到mesh上的1-3个顶点）")
+            col.label(text="7. 给骨骼添加Copy Transforms约束到对应空物体")
+            col.label(text="8. 烘焙骨骼动画")
+            col.label(text="9. 删除空物体")
+
+        # 物理烘焙到骨骼全流程
+        # 1.完成烘焙动画
+        # 2.在对应位置骨骼，骨骼数量和密度决定烘焙的精度
+        # 3.点击'创建空物体'，插件将自动添加约束复制骨骼位置，确保朝向一致
+        # 4.应用空物体的视觉变换
+        # 5.删除空物体上的复制位置约束 
+        # 6.点击'绑定到顶点'自动绑定空物体到附近顶点（也可手动ctrl+P绑定到mesh上的1-3个顶点）
+        # 7.给骨骼添加Copy Transforms约束到对应空物体
+        # 8.烘焙骨骼动画
+        # 9.删除空物体
 
 # ============================================================================
 # 注册和注销 / Registration and Unregistration

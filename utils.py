@@ -51,7 +51,7 @@ def get_safe_filename(filename):
 
 def prefilter_export_name(name):
     """过滤导出名称中的非法字符"""
-    result = re.sub("[#%&{}<>\\\*?/'\":`|]", "_", name)
+    result = re.sub(r"[#%&{}<>\\*?/'\":`|]", "_", name)
     return result
 
 def print_execution_time(operation_name, start_time):
@@ -346,11 +346,16 @@ def reset_object_transforms(obj):
     obj.scale = (1, 1, 1)
 
 def ensure_exporters_enabled():
-    """确保必要的导出器插件已启用"""
-    required_addons = ['io_scene_obj', 'io_scene_fbx']
-    
-    for addon in required_addons:
+    """确保必要的导出operator可用"""
+    exporter_requirements = [
+        ('io_scene_fbx', bpy.ops.export_scene, 'fbx'),
+        ('io_scene_obj', bpy.ops.wm, 'obj_export'),
+    ]
+
+    for addon, operator_group, operator_name in exporter_requirements:
         try:
+            if hasattr(operator_group, operator_name):
+                continue
             if addon not in bpy.context.preferences.addons:
                 bpy.ops.preferences.addon_enable(module=addon)
                 print(f"PopTools: Enabled {addon} addon")

@@ -2,9 +2,17 @@
 
 ![Blender Version](https://img.shields.io/badge/Blender-4.2+-blue.svg)
 ![Python Version](https://img.shields.io/badge/Python-3.11+-green.svg)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+![License](https://img.shields.io/badge/License-GPL--3.0--or--later-yellow.svg)
 
 ## 版本更新日志 / Version Changelog
+### 4.0.0 (2026)
+- **新增功能**: 新增 AI资产处理工具面板，整合高模资产一键处理、材质颜色优化、快速减面和 Marmoset 一键烘焙流程
+- **Marmoset烘焙**: 支持从 Blender 自动导出高低模、调用 Marmoset Toolbag 烘焙 Normal、Albedo、AO、Curvature，并回写贴图到低模材质
+- **低模生成**: 新增一键生成低模流程，支持复制高模、Decimate 减面、智能 UV 展开、平滑着色和自动高低模命名
+- **材质处理**: 新增高模材质颜色优化，自动插入 Hue/Saturation/Value 与 RGB Curves 节点，并统一 Roughness 默认值
+- **扩展发布**: 新增 Blender Extension manifest，为通过远程仓库 index.json 安装和更新插件做准备
+- **UI优化**: 将角色纹理重命名面板显示为纹理重命名工具，并优化 AI资产处理工具中的功能分组和按钮布局
+
 ### 3.5.0 (2025)
 - 新增: 动物命名规则前缀从 animals 改为 special，以统一命名体系
 - 优化: 打包流程稳定性与日志输出，确保生成的 ZIP 和 JSON 文件正确移动到 docs

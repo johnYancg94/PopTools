@@ -11,6 +11,7 @@ import sys
 import os
 from bpy.types import Panel, Operator, PropertyGroup
 from bpy.props import StringProperty, EnumProperty, BoolProperty, CollectionProperty
+from .doubao_responses import DEFAULT_DOUBAO_MODEL, build_translation_input, extract_response_text
 from .utils import show_message_box
 
 # 尝试导入腾讯云SDK
@@ -171,7 +172,7 @@ class TencentTranslateAPI:
 class DoubaoTranslateAPI:
     """Doubao AI翻译API封装类"""
     
-    def __init__(self, api_key="", base_url="https://ark.cn-beijing.volces.com/api/v3", model="doubao-1.5-lite-32k-250115"):
+    def __init__(self, api_key="", base_url="https://ark.cn-beijing.volces.com/api/v3", model=DEFAULT_DOUBAO_MODEL):
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
@@ -221,7 +222,7 @@ class DoubaoTranslateAPI:
         return cls(
             api_key=api_key,
             base_url="https://ark.cn-beijing.volces.com/api/v3",
-            model="doubao-1.5-lite-32k-250115"
+            model=DEFAULT_DOUBAO_MODEL
         )
     
     def translate_text(self, text, system_prompt=None):
@@ -242,19 +243,16 @@ class DoubaoTranslateAPI:
         print(f"[AI翻译调试] API Key: {self.api_key[:8]}...")
             
         try:
-            # 调用Doubao API
-            completion = self.client.chat.completions.create(
+            response = self.client.responses.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text},
-                ],
+                input=build_translation_input(system_prompt, text),
             )
             
             print(f"[AI翻译调试] API响应成功")
             
-            # 解析响应
-            translated_text = completion.choices[0].message.content.strip()
+            translated_text = extract_response_text(response)
+            if not translated_text:
+                return {"error": "AI翻译响应为空"}
             print(f"[AI翻译调试] 翻译成功: '{translated_text}'")
             
             return {

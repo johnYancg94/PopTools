@@ -16,11 +16,38 @@ from bpy.props import BoolProperty, EnumProperty, StringProperty
 
 # 导入工具函数
 from .utils import show_message_box, get_addon_preferences
+from .generic_model_naming import build_sequential_names, contains_chinese, sanitize_identifier
 from .translation_tools import translate_text_tool, ai_translate_text_tool
 
 # ============================================================================
 # 共享UI绘制函数 / Shared UI Drawing Functions
 # ============================================================================
+
+GENERIC_MODEL_TRANSLATE_PROMPT = (
+    "你正在为游戏资产生成英文命名片段，用于 Blender 模型命名。"
+    "请把输入转换成符合游戏开发习惯的简洁英文，不要直译成长词。"
+    "要求："
+    "1. 只返回结果，不要解释；"
+    "2. 优先使用游戏行业常见简称和习惯叫法，例如 金币 -> coin，不要输出 goldcoin；"
+    "3. 结果不要包含下划线、空格、连字符或其他符号；"
+    "4. 多词请直接使用 lowerCamelCase；"
+    "5. 保持简洁准确，避免冗长描述。"
+)
+
+
+def resolve_generic_model_segment(raw_value):
+    """将用户输入转换为可用于命名的英文片段。"""
+    value = (raw_value or "").strip()
+    if not value:
+        return ""
+
+    resolved_value = value
+    if contains_chinese(value):
+        translated_value = ai_translate_text_tool(value, GENERIC_MODEL_TRANSLATE_PROMPT)
+        if translated_value and translated_value.strip():
+            resolved_value = translated_value
+
+    return sanitize_identifier(resolved_value)
 
 def draw_texture_manager_ui(layout, context, show_help_section=True, show_extended_features=False):
     """共享的纹理管理UI绘制函数
@@ -303,7 +330,62 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
             row = building_box.row(align=True)
             row.scale_y = 1.5
             row.operator("rt.auto_name_bake_models", text="烘焙高低模自动命名", icon='MESH_DATA')
-        
+
+        # 添加通用模型重命名部分 - 可折叠
+        layout.separator()
+        generic_box = layout.box()
+        header_row = generic_box.row(align=True)
+        if props_main.show_generic_model_rename_box:
+            header_row.operator("rt.toggle_generic_model_rename_box", text="", icon='TRIA_DOWN', emboss=False)
+        else:
+            header_row.operator("rt.toggle_generic_model_rename_box", text="", icon='TRIA_RIGHT', emboss=False)
+        header_row.label(text="通用模型重命名")
+
+        if props_main.show_generic_model_rename_box:
+            tip_box = generic_box.box()
+            tip_box.label(text="命名规则: mesh_活动类型_模型名称XX", icon='INFO')
+            tip_box.label(text="段内不加下划线，中文会自动调用豆包AI按游戏命名习惯翻译")
+            tip_box.label(text="编号从01开始自动递增，并跳过场景内重名资产")
+
+            row = generic_box.row(align=True)
+            split = row.split(factor=0.3)
+            split.label(text="活动类型:")
+            split.prop(props, "generic_model_activity_type", text="")
+
+            row = generic_box.row(align=True)
+            split = row.split(factor=0.3)
+            split.label(text="模型名称:")
+            split.prop(props, "generic_model_name", text="")
+
+            row = generic_box.row(align=True)
+            split = row.split(factor=0.3)
+            split.label(text="后缀:")
+            split.prop(props, "generic_model_suffix", text="")
+
+            if props.generic_model_activity_type.strip() and props.generic_model_name.strip():
+                activity_preview = props.generic_model_activity_type.strip()
+                model_preview = props.generic_model_name.strip()
+                suffix_preview = props.generic_model_suffix.strip()
+                if not contains_chinese(activity_preview):
+                    activity_preview = sanitize_identifier(activity_preview)
+                if not contains_chinese(model_preview):
+                    model_preview = sanitize_identifier(model_preview)
+                if suffix_preview and not contains_chinese(suffix_preview):
+                    suffix_preview = sanitize_identifier(suffix_preview)
+                preview_box = generic_box.box()
+                if suffix_preview:
+                    preview_text = f"预览: mesh_{activity_preview}_{model_preview}_{suffix_preview}01"
+                else:
+                    preview_text = f"预览: mesh_{activity_preview}_{model_preview}01"
+                preview_box.label(
+                    text=preview_text,
+                    icon='HIDE_OFF'
+                )
+
+            row = generic_box.row(align=True)
+            row.scale_y = 1.5
+            row.operator("rt.generic_rename_models", text="自动重命名选中模型", icon='OUTLINER_OB_MESH')
+
         # 添加minigame重命名部分 - 可折叠
         layout.separator()
         minigame_box = layout.box()
@@ -433,6 +515,19 @@ class RT_OT_ToggleMinigameRenameBox(Operator):
     def execute(self, context):
         props = context.scene.poptools_props
         props.show_minigame_rename_box = not props.show_minigame_rename_box
+        return {'FINISHED'}
+
+
+class RT_OT_ToggleGenericModelRenameBox(Operator):
+    """切换通用模型重命名框的显示/隐藏"""
+    bl_idname = "rt.toggle_generic_model_rename_box"
+    bl_label = "切换通用模型重命名框"
+    bl_description = "切换通用模型重命名框的展开/收起状态"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        props = context.scene.poptools_props
+        props.show_generic_model_rename_box = not props.show_generic_model_rename_box
         return {'FINISHED'}
 
 class RT_OT_SetMinigameGameplay(Operator):
@@ -1706,6 +1801,72 @@ class RT_OT_MinigameRenameModel(Operator):
         
         return {'FINISHED'}
 
+
+class RT_OT_GenericRenameModels(Operator):
+    """通用模型自动命名 / Generic Model Auto Rename"""
+    bl_idname = "rt.generic_rename_models"
+    bl_label = "自动重命名选中模型"
+    bl_description = "根据活动类型和模型名称自动重命名选中模型"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.poptools_props.retex_settings
+        selected_mesh_objects = [
+            obj for obj in context.selected_objects if obj.type == 'MESH'
+        ]
+
+        if not selected_mesh_objects:
+            show_message_box("请先选择要重命名的网格模型", "警告", 'ERROR')
+            return {'CANCELLED'}
+
+        if not props.generic_model_activity_type.strip():
+            show_message_box("请输入活动类型", "输入错误", 'ERROR')
+            return {'CANCELLED'}
+
+        if not props.generic_model_name.strip():
+            show_message_box("请输入模型名称", "输入错误", 'ERROR')
+            return {'CANCELLED'}
+
+        activity_type = resolve_generic_model_segment(props.generic_model_activity_type)
+        model_name = resolve_generic_model_segment(props.generic_model_name)
+        suffix = resolve_generic_model_segment(props.generic_model_suffix)
+
+        if not activity_type:
+            show_message_box("活动类型翻译或清洗后为空，请检查输入内容", "命名错误", 'ERROR')
+            return {'CANCELLED'}
+
+        if not model_name:
+            show_message_box("模型名称翻译或清洗后为空，请检查输入内容", "命名错误", 'ERROR')
+            return {'CANCELLED'}
+
+        existing_names = {
+            obj.name for obj in bpy.data.objects if obj not in selected_mesh_objects
+        }
+        sorted_objects = sorted(selected_mesh_objects, key=lambda obj: obj.name.lower())
+        new_names = build_sequential_names(
+            activity_type=activity_type,
+            model_name=model_name,
+            count=len(sorted_objects),
+            existing_names=existing_names,
+            suffix=suffix,
+        )
+
+        for obj, new_name in zip(sorted_objects, new_names):
+            obj.name = new_name
+            if obj.data:
+                obj.data.name = new_name
+
+        props.generic_model_activity_type = activity_type
+        props.generic_model_name = model_name
+        props.generic_model_suffix = suffix
+
+        show_message_box(
+            f"成功重命名 {len(sorted_objects)} 个模型\n首个名称: {new_names[0]}",
+            "重命名完成",
+            'INFO'
+        )
+        return {'FINISHED'}
+
 class RT_OT_MinigameRenamePBRTexture(Operator):
     """minigame PBR贴图自动命名 / Minigame PBR Texture Auto Rename"""
     bl_idname = "rt.minigame_rename_pbr_texture"
@@ -1866,7 +2027,7 @@ class RT_OT_MinigameRenamePBRTexture(Operator):
 class RT_OT_TextureManagerPopup(Operator):
     """纹理管理弹出面板 / Texture Manager Popup Panel"""
     bl_idname = "rt.texture_manager_popup"
-    bl_label = "角色纹理重命名"
+    bl_label = "纹理重命名工具"
     bl_description = "打开纹理管理弹出面板"
     bl_options = {'REGISTER'}
     
@@ -1880,7 +2041,7 @@ class RT_OT_TextureManagerPopup(Operator):
 
 class RT_PT_TextureRenamerPanel(Panel):
     """纹理管理面板 / Texture Management Panel"""
-    bl_label = "角色纹理重命名"
+    bl_label = "纹理重命名工具"
     bl_idname = "RT_PT_TextureRenamerPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -2083,6 +2244,7 @@ classes = [
     RT_OT_ToggleAnimalRenameBox,
     RT_OT_ToggleBuildingRenameBox,
     RT_OT_ToggleMinigameRenameBox,
+    RT_OT_ToggleGenericModelRenameBox,
     RT_OT_SetMinigameGameplay,
     RT_OT_SetMinigameScene,
     RT_OT_SetMinigameTextureType,
@@ -2107,6 +2269,7 @@ classes = [
     RT_OT_CheckUVs,
     RT_OT_CreateAnnotations,
     RT_OT_ClearAnnotations,
+    RT_OT_GenericRenameModels,
     RT_OT_MinigameRenameModel,
     RT_OT_MinigameRenamePBRTexture,
     RT_OT_TranslateText,

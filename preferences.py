@@ -280,6 +280,26 @@ class PopToolsPreferences(AddonPreferences):
         description="启用/禁用顶点到骨骼烘焙工具",
         default=False
     )
+
+    enable_marmoset_baker_tools: BoolProperty(
+        name="启用Marmoset烘焙工具",
+        description="启用/禁用Blender联动Marmoset一键烘焙工具",
+        default=True
+    )
+
+    marmoset_toolbag_path: StringProperty(
+        name="Marmoset Toolbag路径",
+        description="默认的Marmoset Toolbag可执行文件路径",
+        default="",
+        subtype='FILE_PATH'
+    )
+
+    marmoset_bake_work_dir: StringProperty(
+        name="Marmoset烘焙工作目录",
+        description="默认的Marmoset烘焙临时文件和贴图输出目录",
+        default="//marmoset_bake/",
+        subtype='DIR_PATH'
+    )
     
     enable_translation_tools: BoolProperty(
         name="启用翻译工具",
@@ -662,8 +682,17 @@ class PopToolsPreferences(AddonPreferences):
         col.prop(self, "enable_retex_tools", icon='TEXTURE')
         col.prop(self, "enable_obj_export_tools", icon='MESH_CUBE')
         col.prop(self, "enable_vertex_baker_tools", icon='MOD_VERTEX_WEIGHT')
+        col.prop(self, "enable_marmoset_baker_tools", icon='TEXTURE')
         col.prop(self, "enable_translation_tools", icon='FILE_TEXT')
         col.prop(self, "enable_action_naming_tools", icon='ACTION')
+
+        if self.enable_marmoset_baker_tools:
+            marmoset_box = box.box()
+            marmoset_box.label(text="Marmoset烘焙默认设置:", icon='TEXTURE')
+            marmoset_col = marmoset_box.column()
+            marmoset_col.prop(self, "marmoset_toolbag_path")
+            marmoset_col.prop(self, "marmoset_bake_work_dir")
+            marmoset_col.operator("poptools.marmoset_auto_detect_toolbag", icon='VIEWZOOM')
         
         # 快捷键设置
         box = layout.box()

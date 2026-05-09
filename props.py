@@ -307,11 +307,11 @@ class ExportToolsSettings(bpy.types.PropertyGroup):
     )
     
     # 调试模式 / Debug Mode (兼容性)
-    # debug: BoolProperty(
-    #     name="调试模式 / Debug Mode", 
-    #     description="启用调试输出 / Enable debug output",
-    #     default=False
-    # )
+    debug: BoolProperty(
+        name="调试模式 / Debug Mode", 
+        description="启用调试输出 / Enable debug output",
+        default=False
+    )
 
 # ReTex Properties
 class ReTexSettings(bpy.types.PropertyGroup):
@@ -505,6 +505,24 @@ class ReTexSettings(bpy.types.PropertyGroup):
         ],
         default='normal'
     )
+
+    generic_model_activity_type: StringProperty(
+        name="活动类型",
+        description="通用模型重命名的活动类型",
+        default=""
+    )
+
+    generic_model_name: StringProperty(
+        name="模型名称",
+        description="通用模型重命名的模型名称",
+        default=""
+    )
+
+    generic_model_suffix: StringProperty(
+        name="后缀",
+        description="通用模型重命名的可选后缀",
+        default=""
+    )
     
     # 移除序号选择，改为自动递增
     
@@ -626,10 +644,124 @@ class VertexBakerSettings(bpy.types.PropertyGroup):
         max=1.0
     )
     
+    # 使用说明折叠状态
+    show_usage_instructions: BoolProperty(
+        name="显示使用说明",
+        description="控制使用说明的显示/隐藏",
+        default=False
+    )
+    
     # 自动清理
     auto_cleanup: BoolProperty(
         name="自动清理",
         description="烘焙完成后自动清理临时对象",
+        default=True
+    )
+
+
+class MarmosetBakerSettings(bpy.types.PropertyGroup):
+    """Marmoset一键烘焙设置 / Marmoset one-click baker settings"""
+
+    bake_scope: EnumProperty(
+        name="对象范围",
+        description="选择参与烘焙的对象范围",
+        items=[
+            ("SELECTED", "选中对象", "仅使用当前选中的网格对象"),
+            ("SCENE", "当前场景", "使用当前场景内所有网格对象"),
+        ],
+        default="SELECTED"
+    )
+
+    model_name_prefix: StringProperty(
+        name="模型名称",
+        description="用于自动命名高低模和输出贴图；为空时使用高面数模型当前名称",
+        default=""
+    )
+
+    lowpoly_decimate_ratio: FloatProperty(
+        name="减面比例",
+        description="一键生成低模时使用的Decimate Collapse比例",
+        default=0.005,
+        min=0.0001,
+        max=1.0,
+        precision=4
+    )
+
+    resolution: EnumProperty(
+        name="分辨率",
+        description="输出贴图分辨率",
+        items=[
+            ("512", "512", ""),
+            ("1024", "1024", ""),
+            ("2048", "2048", ""),
+            ("4096", "4096", ""),
+        ],
+        default="2048"
+    )
+
+    output_bits: EnumProperty(
+        name="位深",
+        description="输出贴图位深",
+        items=[
+            ("8", "8 bit", ""),
+            ("16", "16 bit", ""),
+            ("32", "32 bit", ""),
+        ],
+        default="8"
+    )
+
+    output_samples: IntProperty(
+        name="采样",
+        description="Marmoset烘焙采样数",
+        default=16,
+        min=1,
+        max=1024
+    )
+
+    edge_padding: EnumProperty(
+        name="边缘扩展",
+        description="Marmoset边缘扩展模式",
+        items=[
+            ("None", "无", ""),
+            ("Moderate", "适中", ""),
+            ("Extreme", "极限", ""),
+        ],
+        default="Moderate"
+    )
+
+    bake_normal: BoolProperty(
+        name="Normal",
+        description="烘焙法线贴图",
+        default=True
+    )
+
+    bake_ao: BoolProperty(
+        name="AO",
+        description="烘焙环境遮蔽贴图",
+        default=False
+    )
+
+    bake_albedo: BoolProperty(
+        name="Albedo",
+        description="烘焙高模材质的基础颜色贴图",
+        default=False
+    )
+
+    bake_curvature: BoolProperty(
+        name="Curvature",
+        description="烘焙曲率贴图",
+        default=False
+    )
+
+    apply_to_low_material: BoolProperty(
+        name="完成后应用到低模材质",
+        description="烘焙完成后自动把贴图节点接入_low对象的材质",
+        default=True
+    )
+
+    close_toolbag_when_done: BoolProperty(
+        name="烘焙后关闭Toolbag",
+        description="Marmoset脚本完成后自动退出Toolbag",
         default=True
     )
 
@@ -648,6 +780,9 @@ class PopToolsProperties(bpy.types.PropertyGroup):
     
     # 顶点烘焙设置
     vertex_baker_settings: PointerProperty(type=VertexBakerSettings)
+
+    # Marmoset烘焙设置
+    marmoset_baker_settings: PointerProperty(type=MarmosetBakerSettings)
     
     # 翻译工具设置（在translation_tools.py中定义）
     # translation_tools: PointerProperty(type=TranslationToolsSettings)
@@ -723,12 +858,19 @@ class PopToolsProperties(bpy.types.PropertyGroup):
         default=False
     )
 
+    show_generic_model_rename_box: BoolProperty(
+        name="显示通用模型重命名",
+        description="控制通用模型重命名框的展开/收起",
+        default=False
+    )
+
 # 注册的类列表
 classes = [
     ExportToolsSettings,
     ReTexSettings,
     ObjExportSettings,
     VertexBakerSettings,
+    MarmosetBakerSettings,
     # TranslationToolsSettings在translation_tools.py中注册
     PopToolsProperties,
 ]

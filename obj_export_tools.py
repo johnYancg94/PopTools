@@ -14,6 +14,7 @@ import logging
 from bpy.types import Operator, Panel
 from bpy.props import StringProperty, EnumProperty, FloatProperty, BoolProperty
 from .utils import get_addon_preferences
+from .obj_export_naming import build_export_identity, build_obj_export_options, rewrite_obj_group_name
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
@@ -115,20 +116,20 @@ def create_export_copy(original_obj, context):
     return obj_copy
 
 
-def setup_export_object(obj, original_obj_name, scene_props):
+def setup_export_object(obj, original_obj, scene_props):
     """
     设置导出对象的名称和属性
     
     Args:
         obj (bpy.types.Object): 要设置的对象
-        original_obj_name (str): 原始对象名称
+        original_obj (bpy.types.Object): 原始对象
         scene_props: 场景属性
     
     Returns:
         tuple: (导出对象名称, 基础名称)
     """
-    # 清理对象名称
-    clean_name = original_obj_name.replace(".", "_")
+    export_identity = build_export_identity(original_obj)
+    clean_name = export_identity["object_name"]
     
     # 坐标归零
     if hasattr(scene_props, 'obj_export_zero_location') and scene_props.obj_export_zero_location:
@@ -139,8 +140,10 @@ def setup_export_object(obj, original_obj_name, scene_props):
         obj.scale = (scene_props.obj_export_scale,) * 3
     
     # 设置对象名称
-    base_name = f"{clean_name}.obj"
-    obj.name = f"export_{clean_name}"
+    base_name = f"{export_identity['file_stem']}.obj"
+    obj.name = clean_name
+    if export_identity["sync_mesh_data_name"] and getattr(obj, "data", None):
+        obj.data.name = clean_name
     
     return obj.name, base_name
 
@@ -152,20 +155,17 @@ def apply_mesh_modifiers(obj):
     Args:
         obj (bpy.types.Object): 要应用修改器的对象
     """
-    # 确保对象处于编辑模式外
-    if bpy.context.object and bpy.context.object.mode != 'OBJECT':
-        bpy.ops.object.mode_set(mode='OBJECT')
-    
-    # 选择对象
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    
-    # 应用所有修改器
-    for modifier in obj.modifiers:
-        try:
-            bpy.ops.object.modifier_apply(modifier=modifier.name)
-        except Exception as e:
-            logger.warning(f"无法应用修改器 {modifier.name}: {e}")
+    with temp_selection_context(bpy.context, active_object=obj, selected_objects=[obj]):
+        # 确保对象处于编辑模式外
+        if bpy.context.object and bpy.context.object.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # 应用所有修改器
+        for modifier in obj.modifiers:
+            try:
+                bpy.ops.object.modifier_apply(modifier=modifier.name)
+            except Exception as e:
+                logger.warning(f"无法应用修改器 {modifier.name}: {e}")
 
 
 def triangulate_mesh(obj, method='BEAUTY', keep_normals=True):
@@ -177,18 +177,19 @@ def triangulate_mesh(obj, method='BEAUTY', keep_normals=True):
         method (str): 三角化方法
         keep_normals (bool): 是否保持法线
     """
-    # 进入编辑模式
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    
-    # 选择所有面
-    bpy.ops.mesh.select_all(action='SELECT')
-    
-    # 三角化
-    bpy.ops.mesh.quads_convert_to_tris(quad_method=method, ngon_method=method)
-    
-    # 返回对象模式
-    bpy.ops.object.mode_set(mode='OBJECT')
+    with temp_selection_context(bpy.context, active_object=obj, selected_objects=[obj]):
+        # 进入编辑模式
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # 选择所有面
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        # 三角化
+        bpy.ops.mesh.quads_convert_to_tris(quad_method=method, ngon_method=method)
+        
+        # 返回对象模式
+        bpy.ops.object.mode_set(mode='OBJECT')
 
 
 def export_object(obj, file_path, scene_props):
@@ -237,19 +238,23 @@ def export_object(obj, file_path, scene_props):
             up_axis_enum = axis_mapping.get(up_axis_value, 'Y')
             
             # 导出OBJ格式
-            bpy.ops.wm.obj_export(
-                filepath=export_filepath,
-                export_selected_objects=True,
+            export_options = build_obj_export_options(
+                export_filepath=export_filepath,
                 global_scale=getattr(scene_props, 'obj_export_scale', 1.0),
                 forward_axis=forward_axis_enum,
                 up_axis=up_axis_enum,
                 export_materials=getattr(scene_props, 'obj_export_materials', True),
-                path_mode="COPY",
-                export_normals=True,
-                export_smooth_groups=True,
-                apply_modifiers=False,  # 由apply_mesh_modifiers处理
-                export_triangulated_mesh=False,  # 由triangulate_mesh处理
             )
+            bpy.ops.wm.obj_export(**export_options)
+
+            desired_group_name = os.path.splitext(os.path.basename(export_filepath))[0]
+            with open(export_filepath, "r", encoding="utf-8") as obj_file:
+                obj_text = obj_file.read()
+
+            rewritten_obj_text = rewrite_obj_group_name(obj_text, desired_group_name)
+            if rewritten_obj_text != obj_text:
+                with open(export_filepath, "w", encoding="utf-8", newline="\n") as obj_file:
+                    obj_file.write(rewritten_obj_text)
             
             logger.info(f"成功导出 {os.path.basename(export_filepath)}")
             return True
@@ -342,7 +347,7 @@ class OBJ_OT_batch_export(Operator):
                     logger.info("处理单个导出（无LOD）...")
                     export_obj = create_export_copy(original_obj, context)
                     (export_obj_name, base_name) = setup_export_object(
-                        export_obj, original_obj.name, scene_props
+                        export_obj, original_obj, scene_props
                     )
                     apply_mesh_modifiers(export_obj)
                     
