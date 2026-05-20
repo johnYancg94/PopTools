@@ -17,7 +17,15 @@ from bpy.props import BoolProperty, EnumProperty, StringProperty
 # 导入工具函数
 from .utils import show_message_box, get_addon_preferences
 from .generic_model_naming import build_sequential_names, contains_chinese, sanitize_identifier
-from .translation_tools import translate_text_tool, ai_translate_text_tool
+from .retex_naming import build_texture_name_from_object_name
+from .translation_tools import (
+    advance_ai_translate_job_progress,
+    ai_translate_text_tool,
+    clear_ai_translate_job,
+    get_ai_translate_job,
+    start_ai_translate_job,
+    translate_text_tool,
+)
 
 # ============================================================================
 # 共享UI绘制函数 / Shared UI Drawing Functions
@@ -33,6 +41,76 @@ GENERIC_MODEL_TRANSLATE_PROMPT = (
     "4. 多词请直接使用 lowerCamelCase；"
     "5. 保持简洁准确，避免冗长描述。"
 )
+RETEX_AI_TRANSLATE_PROMPT = (
+    "我现在需要为unity游戏角色动作进行英文命名,我输入中文,你回复我英文结果,"
+    "请确保英文结果简洁准确干练,不要有太多的字数,尽量使用单个单词概括."
+    "结果不包含任何符号(包括_)和空格,首字母使用小写,后续驼峰可以大写开头"
+)
+RETEX_TRANSLATE_JOB_KEY = "retex_ai_translate"
+
+
+def poll_retex_ai_translation():
+    try:
+        job = advance_ai_translate_job_progress(RETEX_TRANSLATE_JOB_KEY)
+        scene = bpy.context.scene
+        if not scene or not hasattr(scene, "poptools_props"):
+            return None
+
+        props = scene.poptools_props.retex_settings
+        if not job:
+            props.ai_translate_in_progress = False
+            return None
+
+        props.ai_translate_progress = float(job.get("progress", 0.0))
+        props.ai_translate_status = job.get("message", "")
+
+        if job.get("state") == "running":
+            props.ai_translate_in_progress = True
+            screen = bpy.context.screen
+            if screen:
+                for area in screen.areas:
+                    area.tag_redraw()
+            return 0.2
+
+        props.ai_translate_in_progress = False
+        props.ai_translate_progress = 1.0
+        if job.get("state") == "done" and job.get("translated_text", ""):
+            props.translate_output_text = job["translated_text"]
+            props.ai_translate_status = "AI翻译完成"
+            show_message_box("AI翻译完成", "信息", 'INFO')
+        else:
+            props.ai_translate_status = job.get("error", "AI翻译失败")
+            show_message_box(f"AI翻译失败: {props.ai_translate_status}", "错误", 'ERROR')
+
+        return None
+    except Exception as exc:
+        print(f"[AI翻译工具] Retex异步翻译轮询失败: {exc}")
+        scene = bpy.context.scene
+        if scene and hasattr(scene, "poptools_props"):
+            props = scene.poptools_props.retex_settings
+            props.ai_translate_in_progress = False
+            props.ai_translate_status = f"AI翻译状态已重置: {exc}"
+        return None
+    finally:
+        job = get_ai_translate_job(RETEX_TRANSLATE_JOB_KEY)
+        if job and job.get("state") != "running":
+            clear_ai_translate_job(RETEX_TRANSLATE_JOB_KEY)
+        screen = bpy.context.screen
+        if screen:
+            for area in screen.areas:
+                area.tag_redraw()
+        
+
+def reset_stale_retex_ai_translation_state(props):
+    job = get_ai_translate_job(RETEX_TRANSLATE_JOB_KEY)
+    if props.ai_translate_in_progress and (not job or job.get("state") != "running"):
+        props.ai_translate_in_progress = False
+        props.ai_translate_progress = 0.0
+        props.ai_translate_status = ""
+        if job:
+            clear_ai_translate_job(RETEX_TRANSLATE_JOB_KEY)
+        return True
+    return False
 
 
 def resolve_generic_model_segment(raw_value):
@@ -91,6 +169,10 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
     translate_row = translate_box.row()
     translate_row.operator("rt.translate_text", text="翻译", icon='ARROW_LEFTRIGHT')
     translate_row.operator("rt.ai_translate_text", text="AI翻译", icon='OUTLINER_OB_LIGHT')
+
+    if props.ai_translate_in_progress or props.ai_translate_progress > 0:
+        progress_text = props.ai_translate_status or "AI翻译"
+        translate_box.prop(props, "ai_translate_progress", text=progress_text, slider=True)
     
     # 输出文本框（只有在有翻译结果时才显示）
     if props.translate_output_text:
@@ -109,6 +191,12 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
     row = pack_box.row()
     row.operator("file.pack_all", text="打包贴图", icon='PACKAGE')
     row.operator("rt.unpack_textures", text="解包贴图", icon='IMPORT')
+    row = pack_box.row()
+    row.scale_y = 1.2
+    row.operator("poptools.secure_texture_resources", text="资源贴图防丢失", icon='FILE_REFRESH')
+    row = pack_box.row()
+    row.scale_y = 1.2
+    row.operator("poptools.smart_find_missing_textures", text="智能查找丢失贴图", icon='VIEWZOOM')
     
     # 分隔线
     layout.separator()
@@ -894,43 +982,24 @@ class RT_OT_SetTexnameOfObject(Operator):
                                     extension = os.path.splitext(filepath)[1]
                                     
                                     # 构建新的文件名
-                                    new_name = obj.name
-                                    
-                                    # 添加后缀（如果有的话）
-                                    if hasattr(props, 'texture_suffix') and props.texture_suffix:
-                                        new_name = f"{new_name}_{props.texture_suffix}"
-                                    
-                                    if props.replace_prefix:
-                                        # 检查是否已有前缀，如果有则替换为tex_，否则添加tex_前缀
-                                        prefix_match = re.match(r'^([a-zA-Z]+)_(.+)$', new_name)
-                                        if prefix_match:
-                                            # 替换现有前缀
-                                            new_name = "tex_" + prefix_match.group(2)
-                                        else:
-                                            # 添加前缀
-                                            new_name = "tex_" + new_name
+                                    texture_suffix = getattr(props, 'texture_suffix', "")
+                                    new_name = build_texture_name_from_object_name(
+                                        obj.name,
+                                        replace_prefix=props.replace_prefix,
+                                        texture_suffix=texture_suffix,
+                                    )
                                         
                                     new_filepath = os.path.join(directory, new_name + extension)
                                     
                                     # 如果新文件名已存在，添加数字后缀
                                     counter = 1
                                     while os.path.exists(new_filepath) and new_filepath != filepath:
-                                        base_name = obj.name
-                                        new_name = f"{base_name}_{counter}"
-                                        
-                                        # 添加后缀（如果有的话）
-                                        if hasattr(props, 'texture_suffix') and props.texture_suffix:
-                                            new_name = f"{new_name}_{props.texture_suffix}"
-                                        
-                                        if props.replace_prefix:
-                                            # 检查是否已有前缀，如果有则替换为tex_，否则添加tex_前缀
-                                            prefix_match = re.match(r'^([a-zA-Z]+)_(.+)$', new_name)
-                                            if prefix_match:
-                                                # 替换现有前缀
-                                                new_name = "tex_" + prefix_match.group(2)
-                                            else:
-                                                # 添加前缀
-                                                new_name = "tex_" + new_name
+                                        base_name = f"{obj.name}_{counter}"
+                                        new_name = build_texture_name_from_object_name(
+                                            base_name,
+                                            replace_prefix=props.replace_prefix,
+                                            texture_suffix=texture_suffix,
+                                        )
                                         new_filepath = os.path.join(directory, new_name + extension)
                                         counter += 1
                                     
@@ -1030,17 +1099,21 @@ class RT_OT_ReplaceTextures(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        total_checked = 0
         total_renamed = 0
+        total_skipped = 0
         errors = []
         props = context.scene.poptools_props.retex_settings
         
         # 遍历所有图片
         for image in bpy.data.images:
             if image.filepath:
+                total_checked += 1
                 try:
                     # 获取图片文件路径
                     filepath = bpy.path.abspath(image.filepath)
                     if not filepath or not os.path.exists(filepath):
+                        total_skipped += 1
                         continue
                         
                     # 获取目录和扩展名
@@ -1048,16 +1121,10 @@ class RT_OT_ReplaceTextures(Operator):
                     extension = os.path.splitext(filepath)[1]
                     
                     # 构建新的文件名
-                    new_name = image.name
-                    if props.replace_prefix:
-                        # 检查是否已有前缀，如果有则替换为tex_，否则添加tex_前缀
-                        prefix_match = re.match(r'^([a-zA-Z]+)_(.+)$', new_name)
-                        if prefix_match:
-                            # 替换现有前缀
-                            new_name = "tex_" + prefix_match.group(2)
-                        elif not new_name.startswith("tex_"):
-                            # 添加前缀
-                            new_name = "tex_" + new_name
+                    new_name = build_texture_name_from_object_name(
+                        image.name,
+                        replace_prefix=props.replace_prefix,
+                    )
                             
                     new_filepath = os.path.join(directory, new_name + extension)
                     
@@ -1073,17 +1140,28 @@ class RT_OT_ReplaceTextures(Operator):
                     if filepath != new_filepath:
                         os.rename(filepath, new_filepath)
                         image.filepath = new_filepath
+                        image.name = new_name
                         total_renamed += 1
                         
                 except Exception as e:
                     errors.append(f"重命名失败：{image.name}\n错误信息：{str(e)}")
         
         # 操作完成后显示结果
-        if total_renamed > 0:
-            show_message_box(f"成功重命名 {total_renamed} 个纹理！", "重命名完成", 'INFO')
         if errors:
             error_msg = "\n".join(errors)
-            show_message_box(f"错误信息：\n{error_msg}", "重命名错误", 'ERROR')
+            summary = (
+                f"已检查 {total_checked} 个纹理，成功重命名 {total_renamed} 个，"
+                f"跳过 {total_skipped} 个。\n\n错误信息：\n{error_msg}"
+            )
+            show_message_box(summary, "同步纹理完成（有错误）", 'ERROR')
+        else:
+            summary = (
+                f"已检查 {total_checked} 个纹理，成功重命名 {total_renamed} 个，"
+                f"跳过 {total_skipped} 个。"
+            )
+            if total_renamed == 0:
+                summary += "\n所有可用纹理已经是最新命名。"
+            show_message_box(summary, "同步纹理完成", 'INFO')
             
         return {'FINISHED'}
 
@@ -2108,22 +2186,25 @@ class RT_OT_AITranslateText(Operator):
         if not props.translate_input_text.strip():
             show_message_box("请输入要翻译的文本", "警告", 'ERROR')
             return {'CANCELLED'}
+        if props.ai_translate_in_progress:
+            if not reset_stale_retex_ai_translation_state(props):
+                show_message_box("AI翻译正在进行中", "警告", 'ERROR')
+                return {'CANCELLED'}
         
-        try:
-            # 调用AI翻译工具函数
-            result = ai_translate_text_tool(
-                props.translate_input_text,
-                "我现在需要为unity游戏角色动作进行英文命名,我输入中文,你回复我英文结果,请确保英文结果简洁准确干练,不要有太多的字数,尽量使用单个单词概括.结果不包含任何符号(包括_)和空格,首字母使用小写,后续驼峰可以大写开头"
-            )
-            
-            # 将翻译结果设置到输出文本框
-            props.translate_output_text = result
-            
-            show_message_box("AI翻译完成", "信息", 'INFO')
-            
-        except Exception as e:
-            show_message_box(f"AI翻译失败: {str(e)}", "错误", 'ERROR')
+        ok, error = start_ai_translate_job(
+            RETEX_TRANSLATE_JOB_KEY,
+            props.translate_input_text,
+            RETEX_AI_TRANSLATE_PROMPT
+        )
+        if not ok:
+            show_message_box(error, "错误", 'ERROR')
             return {'CANCELLED'}
+
+        props.ai_translate_in_progress = True
+        props.ai_translate_progress = 0.08
+        props.ai_translate_status = "正在启动AI翻译"
+        if not bpy.app.timers.is_registered(poll_retex_ai_translation):
+            bpy.app.timers.register(poll_retex_ai_translation, first_interval=0.2)
         
         return {'FINISHED'}
 

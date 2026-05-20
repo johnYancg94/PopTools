@@ -415,6 +415,27 @@ class ReTexSettings(bpy.types.PropertyGroup):
         description="翻译后的英文文本",
         default=""
     )
+
+    ai_translate_in_progress: BoolProperty(
+        name="AI翻译进行中",
+        description="AI翻译后台任务是否正在运行",
+        default=False
+    )
+
+    ai_translate_progress: FloatProperty(
+        name="AI翻译进度",
+        description="AI翻译后台任务进度",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        subtype="FACTOR"
+    )
+
+    ai_translate_status: StringProperty(
+        name="AI翻译状态",
+        description="AI翻译后台任务状态",
+        default=""
+    )
     
     translate_source_lang: EnumProperty(
         name="源语言",
@@ -672,9 +693,40 @@ class MarmosetBakerSettings(bpy.types.PropertyGroup):
         default="SELECTED"
     )
 
+    bake_mode: EnumProperty(
+        name="烘焙模式",
+        description="选择高低模烘焙配对方式",
+        items=[
+            ("ONE_TO_ONE", "一对一烘焙", "每组_high只烘焙到同名_low，并输出对应的一组贴图"),
+            ("MANY_TO_ONE", "多对一烘焙", "多个高模共同烘焙到一套低模UV和一套材质贴图"),
+        ],
+        default="ONE_TO_ONE"
+    )
+
     model_name_prefix: StringProperty(
         name="模型名称",
         description="用于自动命名高低模和输出贴图；为空时使用高面数模型当前名称",
+        default=""
+    )
+
+    model_name_translate_in_progress: BoolProperty(
+        name="模型名称AI翻译进行中",
+        description="模型名称AI翻译后台任务是否正在运行",
+        default=False
+    )
+
+    model_name_translate_progress: FloatProperty(
+        name="模型名称AI翻译进度",
+        description="模型名称AI翻译后台任务进度",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        subtype="FACTOR"
+    )
+
+    model_name_translate_status: StringProperty(
+        name="模型名称AI翻译状态",
+        description="模型名称AI翻译后台任务状态",
         default=""
     )
 

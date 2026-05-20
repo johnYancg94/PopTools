@@ -32,6 +32,7 @@ MAX_TARGETS = 64
 _draw_handler = None
 _monitor_windows = set()
 _shutting_down = False
+_original_draw_xform_template = None
 
 _state = {
     "active": False,
@@ -85,6 +86,96 @@ def _orientation_slot(context):
         return slots[0]
     except Exception:
         return None
+
+
+def _set_orientation_type(context, orientation_type):
+    slot = _orientation_slot(context)
+    if not slot:
+        return False
+    slot.type = orientation_type
+    _tag_view3d_redraw(context)
+    return True
+
+
+class VIEW3D_OT_poptools_set_transform_orientation(bpy.types.Operator):
+    """切换3D视图坐标系"""
+    bl_idname = "view3d.poptools_set_transform_orientation"
+    bl_label = "切换坐标系"
+    bl_options = {"REGISTER"}
+
+    orientation_type: bpy.props.EnumProperty(
+        name="坐标系",
+        items=[
+            ("GLOBAL", "Global", "切换到全局坐标系"),
+            ("LOCAL", "Local", "切换到局部坐标系"),
+        ],
+        default="GLOBAL",
+    )
+
+    def execute(self, context):
+        if not _set_orientation_type(context, self.orientation_type):
+            self.report({"ERROR"}, "无法切换当前坐标系")
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+def draw_orientation_shortcut_buttons_in_layout(layout, context):
+    slot = _orientation_slot(context)
+    current_type = getattr(slot, "type", "GLOBAL") if slot else "GLOBAL"
+    row = layout.row(align=True)
+    row.operator(
+        "view3d.poptools_set_transform_orientation",
+        text="G",
+        depress=current_type == "GLOBAL",
+    ).orientation_type = "GLOBAL"
+    row.operator(
+        "view3d.poptools_set_transform_orientation",
+        text="L",
+        depress=current_type == "LOCAL",
+    ).orientation_type = "LOCAL"
+
+
+def draw_xform_template_with_orientation_shortcuts(layout, context):
+    draw_orientation_shortcut_buttons_in_layout(layout, context)
+    if _original_draw_xform_template:
+        _original_draw_xform_template(layout, context)
+
+
+def install_orientation_header_patch():
+    global _original_draw_xform_template
+
+    header_cls = getattr(bpy.types, "VIEW3D_HT_header", None)
+    if not header_cls:
+        return
+
+    current = getattr(header_cls, "draw_xform_template", None)
+    if not current:
+        return
+
+    if getattr(current, "_poptools_orientation_shortcuts", False):
+        _original_draw_xform_template = getattr(current, "_poptools_original", None)
+        return
+
+    _original_draw_xform_template = current
+    draw_xform_template_with_orientation_shortcuts._poptools_orientation_shortcuts = True
+    draw_xform_template_with_orientation_shortcuts._poptools_original = current
+    header_cls.draw_xform_template = staticmethod(draw_xform_template_with_orientation_shortcuts)
+
+
+def uninstall_orientation_header_patch():
+    global _original_draw_xform_template
+
+    header_cls = getattr(bpy.types, "VIEW3D_HT_header", None)
+    if not header_cls:
+        return
+
+    current = getattr(header_cls, "draw_xform_template", None)
+    if getattr(current, "_poptools_orientation_shortcuts", False):
+        original = getattr(current, "_poptools_original", None) or _original_draw_xform_template
+        if original:
+            header_cls.draw_xform_template = staticmethod(original)
+
+    _original_draw_xform_template = None
 
 
 def _normalized_matrix(matrix):
@@ -463,6 +554,7 @@ class VIEW3D_OT_poptools_transform_axis_monitor(bpy.types.Operator):
 
 
 classes = (
+    VIEW3D_OT_poptools_set_transform_orientation,
     VIEW3D_OT_poptools_transform_axis_monitor,
 )
 
@@ -509,6 +601,11 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    try:
+        install_orientation_header_patch()
+    except Exception as exc:
+        print(f"PopTools failed to patch orientation header buttons: {exc}")
+
     if _draw_handler is None:
         _draw_handler = bpy.types.SpaceView3D.draw_handler_add(
             _draw_axes,
@@ -525,6 +622,11 @@ def unregister():
 
     _shutting_down = True
     _clear_active()
+
+    try:
+        uninstall_orientation_header_patch()
+    except Exception:
+        pass
 
     if _draw_handler is not None:
         bpy.types.SpaceView3D.draw_handler_remove(_draw_handler, "WINDOW")

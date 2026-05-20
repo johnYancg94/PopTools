@@ -22,12 +22,18 @@ import bpy
 from bpy.types import Operator, Panel
 
 from .utils import get_addon_preferences
-from .translation_tools import ai_translate_text_tool
+from .translation_tools import (
+    advance_ai_translate_job_progress,
+    clear_ai_translate_job,
+    get_ai_translate_job,
+    start_ai_translate_job,
+)
 
 
 LOW_SUFFIX = "_low"
 HIGH_SUFFIX = "_high"
 ACTIVE_BAKE_JOB = None
+MARMORSET_MODEL_TRANSLATE_JOB_KEY = "marmoset_model_name"
 MARMORSET_MODEL_TRANSLATE_PROMPT = (
     "你正在为游戏资产生成英文模型名称，用于 Blender 模型和贴图命名。"
     "请把输入转换成符合游戏开发习惯的简洁英文，不要直译成长词。"
@@ -38,6 +44,45 @@ MARMORSET_MODEL_TRANSLATE_PROMPT = (
     "4. 多词请直接使用 lowerCamelCase；"
     "5. 保持简洁准确，避免冗长描述。"
 )
+
+
+def poll_marmoset_model_name_translation():
+    job = advance_ai_translate_job_progress(MARMORSET_MODEL_TRANSLATE_JOB_KEY)
+    scene = bpy.context.scene
+    if not scene or not hasattr(scene, "poptools_props"):
+        return None
+
+    settings = scene.poptools_props.marmoset_baker_settings
+    if not job:
+        settings.model_name_translate_in_progress = False
+        return None
+
+    settings.model_name_translate_progress = float(job.get("progress", 0.0))
+    settings.model_name_translate_status = job.get("message", "")
+
+    if job.get("state") == "running":
+        settings.model_name_translate_in_progress = True
+        screen = bpy.context.screen
+        if screen:
+            for area in screen.areas:
+                area.tag_redraw()
+        return 0.2
+
+    settings.model_name_translate_in_progress = False
+    settings.model_name_translate_progress = 1.0
+    translated = normalize_identifier(job.get("translated_text", ""))
+    if job.get("state") == "done" and translated:
+        settings.model_name_prefix = translated
+        settings.model_name_translate_status = "AI翻译完成"
+    else:
+        settings.model_name_translate_status = job.get("error", "AI翻译失败")
+
+    clear_ai_translate_job(MARMORSET_MODEL_TRANSLATE_JOB_KEY)
+    screen = bpy.context.screen
+    if screen:
+        for area in screen.areas:
+            area.tag_redraw()
+    return None
 
 MAP_DEFINITIONS = {
     "normal": {
@@ -119,29 +164,7 @@ def build_pair_base_name(prefix, fallback_name, index, total):
 
 
 def infer_high_low_pairs(objects, prefix=""):
-    tagged_lows, tagged_highs, untagged = split_high_low(objects)
     pairs = []
-
-    if tagged_lows or tagged_highs:
-        sorted_lows = sorted(tagged_lows, key=lambda obj: clean_base_name(obj.name).lower())
-        sorted_highs = sorted(tagged_highs, key=lambda obj: clean_base_name(obj.name).lower())
-        pair_count = min(len(sorted_lows), len(sorted_highs))
-        for index in range(pair_count):
-            low_obj = sorted_lows[index]
-            high_obj = sorted_highs[index]
-            base_name = build_pair_base_name(prefix, high_obj.name, index, pair_count)
-            low_obj.name = f"{base_name}{LOW_SUFFIX}"
-            high_obj.name = f"{base_name}{HIGH_SUFFIX}"
-            rename_mesh_data(low_obj)
-            rename_mesh_data(high_obj)
-            pairs.append({
-                "base_name": base_name,
-                "low": low_obj,
-                "high": high_obj,
-            })
-        leftovers = untagged + sorted_lows[pair_count:] + sorted_highs[pair_count:]
-        return pairs, leftovers
-
     sorted_objects = sorted(objects, key=lambda obj: mesh_complexity(obj))
     if len(sorted_objects) < 2:
         return [], list(objects)
@@ -166,6 +189,100 @@ def infer_high_low_pairs(objects, prefix=""):
     return pairs, leftovers
 
 
+def infer_one_to_one_pairs(objects, prefix=""):
+    tagged_lows, tagged_highs, untagged = split_high_low(objects)
+    leftovers = list(untagged)
+    lows_by_base = {}
+    highs_by_base = {}
+    for low_obj in tagged_lows:
+        base_name = clean_base_name(low_obj.name).lower()
+        if base_name in lows_by_base:
+            leftovers.append(low_obj)
+        else:
+            lows_by_base[base_name] = low_obj
+    for high_obj in tagged_highs:
+        base_name = clean_base_name(high_obj.name).lower()
+        if base_name in highs_by_base:
+            leftovers.append(high_obj)
+        else:
+            highs_by_base[base_name] = high_obj
+
+    pairs = []
+    matched_bases = sorted(set(lows_by_base) & set(highs_by_base))
+    for match_base in matched_bases:
+        low_obj = lows_by_base[match_base]
+        high_obj = highs_by_base[match_base]
+        base_name = normalize_identifier(prefix or clean_base_name(high_obj.name))
+        pairs.append({"base_name": base_name, "low": low_obj, "high": high_obj})
+
+    for base_name, low_obj in lows_by_base.items():
+        if base_name not in highs_by_base:
+            leftovers.append(low_obj)
+    for base_name, high_obj in highs_by_base.items():
+        if base_name not in lows_by_base:
+            leftovers.append(high_obj)
+    return pairs, leftovers
+
+
+def infer_many_to_one_group(objects, prefix=""):
+    objects = [obj for obj in objects if obj.type == "MESH"]
+    if len(objects) < 2:
+        return None, list(objects)
+
+    tagged_lows, tagged_highs, untagged = split_high_low(objects)
+    if untagged:
+        return None, untagged
+
+    lows_by_base = {}
+    highs_by_base = {}
+    leftovers = []
+    for low_obj in tagged_lows:
+        base_name = clean_base_name(low_obj.name).lower()
+        if base_name in lows_by_base:
+            leftovers.append(low_obj)
+        else:
+            lows_by_base[base_name] = low_obj
+    for high_obj in tagged_highs:
+        base_name = clean_base_name(high_obj.name).lower()
+        if base_name in highs_by_base:
+            leftovers.append(high_obj)
+        else:
+            highs_by_base[base_name] = high_obj
+    for base_name, low_obj in lows_by_base.items():
+        if base_name not in highs_by_base:
+            leftovers.append(low_obj)
+    for base_name, high_obj in highs_by_base.items():
+        if base_name not in lows_by_base:
+            leftovers.append(high_obj)
+    if leftovers:
+        return None, leftovers
+
+    matched_bases = sorted(set(lows_by_base) & set(highs_by_base))
+    if not matched_bases:
+        return None, objects
+
+    pairs = [
+        {
+            "base_name": normalize_identifier(clean_base_name(highs_by_base[base_name].name)),
+            "low": lows_by_base[base_name],
+            "high": highs_by_base[base_name],
+        }
+        for base_name in matched_bases
+    ]
+    lows = [pair["low"] for pair in pairs]
+    highs = [pair["high"] for pair in pairs]
+    reference_high = max(highs, key=lambda obj: mesh_complexity(obj))
+    base_name = normalize_identifier(prefix or clean_base_name(reference_high.name))
+
+    return {
+        "base_name": base_name,
+        "lows": lows,
+        "highs": highs,
+        "pairs": pairs,
+        "reference_high": reference_high,
+    }, []
+
+
 def get_candidate_meshes(context, settings):
     if settings.bake_scope == "SCENE":
         return [obj for obj in context.scene.objects if obj.type == "MESH"]
@@ -187,6 +304,77 @@ def split_high_low(objects):
             untagged.append(obj)
 
     return lows, highs, untagged
+
+
+def mesh_has_uv(obj):
+    data = getattr(obj, "data", None)
+    uv_layers = getattr(data, "uv_layers", None)
+    return bool(uv_layers and len(uv_layers) > 0)
+
+
+def missing_uv_mesh_names(objects):
+    return [obj.name for obj in objects if not mesh_has_uv(obj)]
+
+
+def align_lows_to_high_origins(pairs):
+    original_matrices = {}
+    moved = []
+    for pair in pairs:
+        low_obj = pair.get("low")
+        high_obj = pair.get("high")
+        if not low_obj or not high_obj:
+            continue
+        low_origin = low_obj.matrix_world.translation
+        high_origin = high_obj.matrix_world.translation
+        if (low_origin - high_origin).length < 0.000001:
+            continue
+        original_matrices[low_obj.name] = low_obj.matrix_world.copy()
+        aligned_matrix = low_obj.matrix_world.copy()
+        aligned_matrix.translation = high_origin
+        low_obj.matrix_world = aligned_matrix
+        moved.append(low_obj.name)
+    bpy.context.view_layer.update()
+    return original_matrices, moved
+
+
+def align_objects_to_origin(objects, target_obj):
+    original_matrices = {}
+    moved = []
+    if not target_obj:
+        return original_matrices, moved
+    target_origin = target_obj.matrix_world.translation
+    for obj in objects:
+        obj_origin = obj.matrix_world.translation
+        if (obj_origin - target_origin).length < 0.000001:
+            continue
+        original_matrices[obj.name] = obj.matrix_world.copy()
+        aligned_matrix = obj.matrix_world.copy()
+        aligned_matrix.translation = target_origin
+        obj.matrix_world = aligned_matrix
+        moved.append(obj.name)
+    bpy.context.view_layer.update()
+    return original_matrices, moved
+
+
+def restore_low_locations(original_matrices):
+    for object_name, matrix_world in original_matrices.items():
+        obj = bpy.data.objects.get(object_name)
+        if obj:
+            obj.matrix_world = matrix_world
+    if original_matrices:
+        bpy.context.view_layer.update()
+
+
+def clear_low_materials_for_export(lows):
+    cleared = []
+    for obj in lows:
+        data = getattr(obj, "data", None)
+        if not data:
+            continue
+        if data.materials:
+            data.materials.clear()
+            cleared.append(obj.name)
+    return cleared
 
 
 def apply_decimate_to_objects(context, objects, ratio):
@@ -280,6 +468,284 @@ def insert_base_color_adjustments(objects):
     return changed
 
 
+def iter_texture_image_users():
+    for obj in bpy.data.objects:
+        if obj.type != "MESH":
+            continue
+        for slot in getattr(obj, "material_slots", []):
+            material = slot.material
+            if not material or not material.use_nodes or not material.node_tree:
+                continue
+            for node in material.node_tree.nodes:
+                if node.type == "TEX_IMAGE" and node.image:
+                    yield obj, material, node, node.image
+
+
+def image_is_packed(image):
+    return bool(getattr(image, "packed_file", None) or getattr(image, "packed_files", None))
+
+
+def image_source_path(image):
+    filepath = getattr(image, "filepath", "")
+    if not filepath:
+        return ""
+    return bpy.path.abspath(filepath)
+
+
+def texture_search_roots(original_path="", work_dir=""):
+    roots = []
+    blend_dir = bpy.path.abspath("//")
+    if blend_dir and os.path.isdir(blend_dir):
+        roots.append(blend_dir)
+        roots.append(os.path.join(blend_dir, "textures"))
+    if work_dir and os.path.isdir(work_dir):
+        roots.append(os.path.join(work_dir, "textures"))
+
+    unique_roots = []
+    seen = set()
+    for root in roots:
+        normalized = os.path.abspath(root)
+        if normalized in seen or not os.path.isdir(normalized):
+            continue
+        seen.add(normalized)
+        unique_roots.append(normalized)
+    return unique_roots
+
+
+def find_texture_candidate(image, original_path, work_dir=""):
+    expected_name = os.path.basename(original_path) if original_path else ""
+    image_stem = os.path.splitext(os.path.basename(expected_name or image.name))[0].lower()
+    image_extensions = {".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".exr", ".psd", ".bmp"}
+    candidates = []
+
+    for root in texture_search_roots(original_path, work_dir):
+        if expected_name:
+            direct = os.path.join(root, expected_name)
+            if os.path.isfile(direct):
+                return direct
+        for current_root, _dirs, files in os.walk(root):
+            for filename in files:
+                extension = os.path.splitext(filename)[1].lower()
+                if extension not in image_extensions:
+                    continue
+                file_stem = os.path.splitext(filename)[0].lower()
+                path = os.path.join(current_root, filename)
+                if expected_name and filename.lower() == expected_name.lower():
+                    return path
+                if image_stem and file_stem == image_stem:
+                    candidates.append(path)
+        if candidates:
+            return candidates[0]
+    return ""
+
+
+def normalized_search_tokens(*values):
+    tokens = []
+    seen = set()
+    for value in values:
+        for part in re.split(r"[^0-9a-zA-Z]+", value or ""):
+            part = part.lower().strip()
+            if len(part) < 3 or part in seen:
+                continue
+            seen.add(part)
+            tokens.append(part)
+    return tokens
+
+
+def texture_kind_tokens(node):
+    text = " ".join([
+        getattr(node, "name", ""),
+        getattr(node, "label", ""),
+        getattr(getattr(node, "image", None), "name", ""),
+    ]).lower()
+    groups = {
+        "basecolor": ["basecolor", "base_color", "albedo", "diffuse", "diff", "color", "colour", "col"],
+        "normal": ["normal", "norm", "nrm"],
+        "roughness": ["roughness", "rough", "rgh"],
+        "metallic": ["metallic", "metalness", "metal"],
+        "ao": ["ao", "occlusion", "ambient"],
+    }
+    for keywords in groups.values():
+        if any(keyword in text for keyword in keywords):
+            return keywords
+    return []
+
+
+def score_texture_candidate(path, expected_names, tokens, kind_tokens):
+    filename = os.path.basename(path).lower()
+    stem = os.path.splitext(filename)[0]
+    score = 0
+    for expected_name in expected_names:
+        expected_filename = os.path.basename(expected_name).lower()
+        expected_stem = os.path.splitext(expected_filename)[0]
+        if expected_filename and filename == expected_filename:
+            score += 100
+        elif expected_stem and stem == expected_stem:
+            score += 80
+        elif expected_stem and (expected_stem in stem or stem in expected_stem):
+            score += 45
+    for token in tokens:
+        if token in stem:
+            score += 8
+    if kind_tokens and any(token in stem for token in kind_tokens):
+        score += 20
+    return score
+
+
+def find_texture_candidate_smart(obj, material, node, image, original_path, work_dir=""):
+    expected_names = [
+        os.path.basename(original_path) if original_path else "",
+        getattr(image, "name", ""),
+        getattr(node, "name", ""),
+        getattr(node, "label", ""),
+    ]
+    tokens = normalized_search_tokens(
+        os.path.splitext(os.path.basename(original_path or ""))[0],
+        image.name,
+        node.name,
+        node.label,
+        material.name if material else "",
+        obj.name if obj else "",
+    )
+    kind_tokens = texture_kind_tokens(node)
+    image_extensions = {".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".exr", ".psd", ".bmp"}
+    best = ("", 0)
+
+    for root in texture_search_roots(original_path, work_dir):
+        for current_root, _dirs, files in os.walk(root):
+            for filename in files:
+                extension = os.path.splitext(filename)[1].lower()
+                if extension not in image_extensions:
+                    continue
+                path = os.path.join(current_root, filename)
+                score = score_texture_candidate(path, expected_names, tokens, kind_tokens)
+                if score > best[1]:
+                    best = (path, score)
+
+    return best[0] if best[1] >= 20 else ""
+
+
+def unique_texture_target_path(texture_dir, source_path):
+    base_name = normalize_identifier(os.path.splitext(os.path.basename(source_path))[0])
+    extension = os.path.splitext(source_path)[1] or ".png"
+    target_path = os.path.join(texture_dir, f"{base_name}{extension}")
+    if not os.path.exists(target_path) or os.path.abspath(source_path) == os.path.abspath(target_path):
+        return target_path
+
+    index = 1
+    while True:
+        candidate = os.path.join(texture_dir, f"{base_name}_{index:02d}{extension}")
+        if not os.path.exists(candidate):
+            return candidate
+        index += 1
+
+
+def secure_project_textures(context):
+    blend_dir = bpy.path.abspath("//")
+    if not blend_dir or not os.path.isdir(blend_dir):
+        raise RuntimeError("请先保存当前.blend文件，再执行资源贴图防丢失")
+
+    texture_dir = ensure_directory(os.path.join(blend_dir, "textures"))
+    work_dir = resolve_work_dir()
+    stats = {
+        "total_nodes": 0,
+        "packed": 0,
+        "copied": 0,
+        "relinked": 0,
+        "already_safe": 0,
+        "missing": [],
+        "errors": [],
+    }
+    processed_images = {}
+
+    for obj, material, node, image in iter_texture_image_users():
+        stats["total_nodes"] += 1
+        image_key = image.as_pointer()
+        if image_key in processed_images:
+            continue
+        processed_images[image_key] = True
+
+        if image_is_packed(image):
+            stats["packed"] += 1
+            continue
+
+        original_path = image_source_path(image)
+        source_path = original_path if original_path and os.path.isfile(original_path) else ""
+        if not source_path:
+            source_path = find_texture_candidate(image, original_path, work_dir)
+            if source_path:
+                stats["relinked"] += 1
+
+        if not source_path or not os.path.isfile(source_path):
+            stats["missing"].append(f"{image.name} ({obj.name}/{material.name})")
+            continue
+
+        try:
+            target_path = unique_texture_target_path(texture_dir, source_path)
+            if os.path.abspath(source_path) != os.path.abspath(target_path):
+                shutil.copy2(source_path, target_path)
+                stats["copied"] += 1
+            else:
+                stats["already_safe"] += 1
+            image.filepath = bpy.path.relpath(target_path)
+            try:
+                image.reload()
+            except Exception:
+                pass
+        except Exception as exc:
+            stats["errors"].append(f"{image.name}: {exc}")
+
+    return stats
+
+
+def smart_find_missing_textures(context):
+    blend_dir = bpy.path.abspath("//")
+    if not blend_dir or not os.path.isdir(blend_dir):
+        raise RuntimeError("请先保存当前.blend文件，再执行智能查找丢失贴图")
+
+    work_dir = resolve_work_dir()
+    stats = {
+        "total_nodes": 0,
+        "missing_nodes": 0,
+        "relinked": 0,
+        "still_missing": [],
+        "errors": [],
+    }
+    processed_images = {}
+
+    for obj, material, node, image in iter_texture_image_users():
+        stats["total_nodes"] += 1
+        image_key = image.as_pointer()
+        if image_key in processed_images:
+            continue
+        processed_images[image_key] = True
+
+        if image_is_packed(image):
+            continue
+
+        original_path = image_source_path(image)
+        if original_path and os.path.isfile(original_path):
+            continue
+
+        stats["missing_nodes"] += 1
+        candidate = find_texture_candidate_smart(obj, material, node, image, original_path, work_dir)
+        if not candidate:
+            candidate = find_texture_candidate(image, original_path, work_dir)
+
+        if not candidate or not os.path.isfile(candidate):
+            stats["still_missing"].append(f"{image.name} ({obj.name}/{material.name})")
+            continue
+
+        try:
+            image.filepath = bpy.path.relpath(candidate)
+            image.reload()
+            stats["relinked"] += 1
+        except Exception as exc:
+            stats["errors"].append(f"{image.name}: {exc}")
+
+    return stats
+
+
 def selected_map_keys(settings):
     return [
         key
@@ -353,7 +819,70 @@ def save_marmoset_path_to_preferences(context, toolbag_path):
     bpy.ops.wm.save_userpref()
 
 
+def iter_upstream_image_nodes(socket, visited=None):
+    if visited is None:
+        visited = set()
+    if not socket:
+        return
+
+    for link in getattr(socket, "links", []):
+        from_node = link.from_node
+        if not from_node:
+            continue
+        node_key = from_node.as_pointer()
+        if node_key in visited:
+            continue
+        visited.add(node_key)
+
+        if from_node.type == "TEX_IMAGE" and from_node.image:
+            yield from_node.image
+            continue
+
+        for input_socket in getattr(from_node, "inputs", []):
+            yield from iter_upstream_image_nodes(input_socket, visited)
+
+
+def image_node_matches_base_color(node):
+    if node.type != "TEX_IMAGE" or not node.image:
+        return False
+    text = " ".join([
+        getattr(node, "name", ""),
+        getattr(node, "label", ""),
+        getattr(node.image, "name", ""),
+        getattr(node.image, "filepath", ""),
+    ]).lower()
+    keywords = (
+        "basecolor",
+        "base_color",
+        "base color",
+        "albedo",
+        "diffuse",
+        "diff",
+        "color",
+        "colour",
+        "col",
+    )
+    return any(keyword in text for keyword in keywords)
+
+
+def iter_named_base_color_images(obj):
+    seen = set()
+    for material_slot in getattr(obj, "material_slots", []):
+        material = material_slot.material
+        if not material or not material.use_nodes or not material.node_tree:
+            continue
+        for node in material.node_tree.nodes:
+            if not image_node_matches_base_color(node):
+                continue
+            image_key = node.image.as_pointer()
+            if image_key in seen:
+                continue
+            seen.add(image_key)
+            yield node.image
+
+
 def iter_base_color_images(obj):
+    seen = set()
     for material_slot in getattr(obj, "material_slots", []):
         material = material_slot.material
         if not material or not material.use_nodes or not material.node_tree:
@@ -364,10 +893,75 @@ def iter_base_color_images(obj):
             base_color = node.inputs.get("Base Color")
             if not base_color:
                 continue
-            for link in base_color.links:
-                from_node = link.from_node
-                if from_node and from_node.type == "TEX_IMAGE" and from_node.image:
-                    yield from_node.image
+            for image in iter_upstream_image_nodes(base_color):
+                image_key = image.as_pointer()
+                if image_key in seen:
+                    continue
+                seen.add(image_key)
+                yield image
+
+    for image in iter_named_base_color_images(obj):
+        image_key = image.as_pointer()
+        if image_key in seen:
+            continue
+        seen.add(image_key)
+        yield image
+
+
+def high_objects_missing_base_color_images(high_objects):
+    missing = []
+    for obj in high_objects:
+        if not any(True for _image in iter_base_color_images(obj)):
+            missing.append(obj.name)
+    return missing
+
+
+def first_vertex_color_attribute_name(obj):
+    data = getattr(obj, "data", None)
+    if not data:
+        return ""
+
+    color_attributes = getattr(data, "color_attributes", None)
+    if color_attributes:
+        active = getattr(color_attributes, "active_color", None) or getattr(color_attributes, "active", None)
+        candidates = []
+        if active:
+            candidates.append(active)
+        candidates.extend(attr for attr in color_attributes if attr not in candidates)
+        for attr in candidates:
+            try:
+                if len(getattr(attr, "data", [])) > 0:
+                    return getattr(attr, "name", "") or "Color"
+            except Exception:
+                continue
+
+    vertex_colors = getattr(data, "vertex_colors", None)
+    if vertex_colors:
+        active = getattr(vertex_colors, "active", None)
+        candidates = []
+        if active:
+            candidates.append(active)
+        candidates.extend(attr for attr in vertex_colors if attr not in candidates)
+        for attr in candidates:
+            try:
+                if len(getattr(attr, "data", [])) > 0:
+                    return getattr(attr, "name", "") or "Color"
+            except Exception:
+                continue
+
+    return ""
+
+
+def object_has_albedo_source(obj):
+    return any(True for _image in iter_base_color_images(obj)) or bool(first_vertex_color_attribute_name(obj))
+
+
+def high_objects_missing_albedo_sources(high_objects):
+    missing = []
+    for obj in high_objects:
+        if not object_has_albedo_source(obj):
+            missing.append(obj.name)
+    return missing
 
 
 def export_image_for_toolbag(image, target_dir):
@@ -424,8 +1018,18 @@ def prepare_high_material_textures(high_objects, target_dir):
         if first_exported_path:
             assignments.append({
                 "object_name": obj.name,
+                "source": "texture",
                 "texture_path": first_exported_path.replace("\\", "/"),
             })
+        else:
+            color_attribute = first_vertex_color_attribute_name(obj)
+            if color_attribute:
+                assignments.append({
+                    "object_name": obj.name,
+                    "source": "vertex_color",
+                    "color_attribute": color_attribute,
+                    "texture_path": "",
+                })
     return prepared, assignments
 
 
@@ -437,16 +1041,23 @@ def restore_prepared_images(prepared_images):
             pass
 
 
-def export_bake_fbx(context, objects, fbx_path, high_objects=None, include_material_textures=False):
+def export_bake_fbx(context, objects, fbx_path, high_objects=None, include_material_textures=False, flatten_hierarchy=False):
     previous_active = context.view_layer.objects.active
     previous_selected = [obj for obj in context.scene.objects if obj.select_get()]
     prepared_images = []
     albedo_assignments = []
+    original_parents = []
 
     try:
         if include_material_textures and high_objects:
             texture_dir = os.path.join(os.path.dirname(fbx_path), "source_textures")
             prepared_images, albedo_assignments = prepare_high_material_textures(high_objects, texture_dir)
+
+        if flatten_hierarchy:
+            for obj in objects:
+                original_parents.append((obj, obj.parent, obj.matrix_parent_inverse.copy(), obj.matrix_world.copy()))
+                obj.parent = None
+                obj.matrix_world = original_parents[-1][3]
 
         for obj in context.scene.objects:
             obj.select_set(False)
@@ -471,6 +1082,11 @@ def export_bake_fbx(context, objects, fbx_path, high_objects=None, include_mater
     finally:
         restore_prepared_images(prepared_images)
 
+        for obj, parent, matrix_parent_inverse, matrix_world in original_parents:
+            obj.parent = parent
+            obj.matrix_parent_inverse = matrix_parent_inverse
+            obj.matrix_world = matrix_world
+
         for obj in context.scene.objects:
             obj.select_set(False)
 
@@ -482,6 +1098,89 @@ def export_bake_fbx(context, objects, fbx_path, high_objects=None, include_mater
             context.view_layer.objects.active = previous_active
 
     return albedo_assignments
+
+
+def prepare_single_bake_job(
+    context,
+    settings,
+    map_keys,
+    work_dir,
+    output_dir,
+    project_name,
+    lows,
+    highs,
+    alignment_pairs=None,
+    shared_output=False,
+    reference_high=None,
+    shared_material_name="",
+):
+    fbx_path = os.path.join(work_dir, f"{project_name}_bake.fbx")
+    script_path = os.path.join(work_dir, f"{project_name}_marmoset_bake.py")
+    status_path = os.path.join(work_dir, f"{project_name}_marmoset_status.json")
+    log_path = os.path.join(work_dir, f"{project_name}_marmoset_process.log")
+    output_file = os.path.join(output_dir, f"{project_name}.png")
+
+    if os.path.exists(status_path):
+        os.remove(status_path)
+
+    original_low_locations = {}
+    moved_lows = []
+    cleared_low_materials = []
+    try:
+        if alignment_pairs:
+            original_low_locations, moved_lows = align_lows_to_high_origins(alignment_pairs)
+        elif reference_high:
+            original_low_locations, moved_lows = align_objects_to_origin(lows, reference_high)
+        cleared_low_materials = clear_low_materials_for_export(lows)
+
+        export_objects = (list(highs) + list(lows)) if shared_output else (list(lows) + list(highs))
+        high_albedo_textures = export_bake_fbx(
+            context,
+            export_objects,
+            fbx_path,
+            high_objects=highs,
+            include_material_textures="albedo" in map_keys,
+            flatten_hierarchy=shared_output,
+        )
+    finally:
+        restore_low_locations(original_low_locations)
+
+    config = {
+        "project_name": project_name,
+        "fbx_path": fbx_path.replace("\\", "/"),
+        "output_dir": output_dir.replace("\\", "/"),
+        "output_file": output_file.replace("\\", "/"),
+        "work_dir": work_dir.replace("\\", "/"),
+        "high_albedo_textures": high_albedo_textures,
+        "temporarily_aligned_lows": moved_lows,
+        "cleared_low_materials": cleared_low_materials,
+        "shared_output": bool(shared_output),
+        "low_objects": [obj.name for obj in lows],
+        "high_objects": [obj.name for obj in highs],
+        "resolution": int(settings.resolution),
+        "output_bits": int(settings.output_bits),
+        "output_samples": int(settings.output_samples),
+        "edge_padding": settings.edge_padding,
+        "map_keys": map_keys,
+        "close_toolbag_when_done": bool(settings.close_toolbag_when_done),
+        "status_path": status_path.replace("\\", "/"),
+    }
+    write_toolbag_script(script_path, config)
+
+    return {
+        "lows": list(lows),
+        "output_dir": output_dir,
+        "work_dir": work_dir,
+        "map_keys": list(map_keys),
+        "apply_to_low_material": bool(settings.apply_to_low_material),
+        "cleanup_when_done": bool(settings.close_toolbag_when_done),
+        "shared_output": bool(shared_output),
+        "shared_material_name": shared_material_name,
+        "fbx_path": fbx_path,
+        "script_path": script_path,
+        "status_path": status_path,
+        "log_path": log_path,
+    }
 
 
 def write_toolbag_script(script_path, config):
@@ -807,20 +1506,97 @@ def set_subroutine_texture(material, slot_name, texture_path):
         "field_names": field_names_seen,
     }}
 
+def set_subroutine_vertex_color(material, color_attribute=""):
+    field_results = []
+    field_names_seen = []
+    selected_subroutine = ""
+    for subroutine_name in ("Vertex Color", "Vertex Colors", "VertexColor"):
+        try:
+            material.setSubroutine("albedo", subroutine_name)
+            selected_subroutine = subroutine_name
+            break
+        except Exception as exc:
+            field_results.append({{"target": "subroutine", "name": subroutine_name, "error": str(exc)}})
+
+    subroutine = None
+    for accessor in (
+        lambda: getattr(material, "albedo"),
+        lambda: material.getSubroutine("albedo"),
+    ):
+        try:
+            subroutine = accessor()
+            if subroutine:
+                break
+        except Exception:
+            pass
+
+    if subroutine:
+        try:
+            field_names_seen = list(subroutine.getFieldNames())
+        except Exception:
+            field_names_seen = []
+
+        if color_attribute:
+            for field_name in ["Vertex Color", "Vertex Color Map", "Color Attribute", "Attribute", "Channel", "Color Set"] + field_names_seen:
+                if not field_name:
+                    continue
+                try:
+                    subroutine.setField(field_name, color_attribute)
+                    field_results.append({{"target": "field", "name": field_name, "value": color_attribute, "status": "set"}})
+                except Exception:
+                    pass
+        try:
+            subroutine.setField("sRGB Color", True)
+            field_results.append({{"target": "field", "name": "sRGB Color", "value": True, "status": "set"}})
+        except Exception:
+            pass
+
+    return {{
+        "subroutine": selected_subroutine,
+        "color_attribute": color_attribute,
+        "field_results": field_results,
+        "field_names": field_names_seen,
+    }}
+
+def create_blank_material(name):
+    constructors = (
+        lambda: mset.Material(),
+        lambda: mset.Material(name),
+    )
+    last_error = ""
+    for constructor in constructors:
+        try:
+            material = constructor()
+            try:
+                material.name = name
+            except Exception:
+                pass
+            return material, ""
+        except Exception as exc:
+            last_error = str(exc)
+    return None, last_error
+
 def apply_high_albedo_materials():
     results = []
     for assignment in CONFIG.get("high_albedo_textures", []):
         object_name = assignment.get("object_name", "")
+        source = assignment.get("source", "texture")
         texture_path = assignment.get("texture_path", "")
-        if not object_name or not texture_path or not os.path.isfile(texture_path):
-            results.append({{"object_name": object_name, "texture_path": texture_path, "status": "missing_texture"}})
+        color_attribute = assignment.get("color_attribute", "")
+        if not object_name:
+            results.append({{"object_name": object_name, "source": source, "texture_path": texture_path, "color_attribute": color_attribute, "status": "missing_object_name"}})
+            continue
+        if source == "texture" and (not texture_path or not os.path.isfile(texture_path)):
+            results.append({{"object_name": object_name, "source": source, "texture_path": texture_path, "status": "missing_texture"}})
             continue
 
         objects = find_high_scene_objects(object_name)
         if not objects:
             results.append({{
                 "object_name": object_name,
+                "source": source,
                 "texture_path": texture_path,
+                "color_attribute": color_attribute,
                 "status": "missing_object",
                 "scene_objects": list_scene_object_names(),
             }})
@@ -837,19 +1613,30 @@ def apply_high_albedo_materials():
         if target_materials:
             material = target_materials[0]
         else:
-            material_source = "imported"
-            try:
-                material = mset.importMaterial(texture_path)
-            except Exception as exc:
-                results.append({{"object_name": object_name, "texture_path": texture_path, "status": "import_failed", "error": str(exc)}})
-                continue
+            if source == "texture":
+                material_source = "imported"
+                try:
+                    material = mset.importMaterial(texture_path)
+                except Exception as exc:
+                    results.append({{"object_name": object_name, "source": source, "texture_path": texture_path, "status": "import_failed", "error": str(exc)}})
+                    continue
+            else:
+                material_source = "created"
+                material, create_error = create_blank_material(object_name + "_vertex_color_mat")
+                if not material:
+                    results.append({{"object_name": object_name, "source": source, "color_attribute": color_attribute, "status": "material_create_failed", "error": create_error}})
+                    continue
 
         materials_to_process = target_materials if target_materials else [material]
         material_results = []
         for current_material in materials_to_process:
+            if source == "vertex_color":
+                albedo_set_result = set_subroutine_vertex_color(current_material, color_attribute)
+            else:
+                albedo_set_result = set_subroutine_texture(current_material, "albedo", texture_path)
             material_results.append({{
                 "material": getattr(current_material, "name", ""),
-                "albedo_set_result": set_subroutine_texture(current_material, "albedo", texture_path),
+                "albedo_set_result": albedo_set_result,
             }})
 
         assigned_objects = []
@@ -866,7 +1653,9 @@ def apply_high_albedo_materials():
 
         results.append({{
             "object_name": object_name,
+            "source": source,
             "texture_path": texture_path,
+            "color_attribute": color_attribute,
             "material": getattr(material, "name", ""),
             "material_source": material_source,
             "existing_materials": [getattr(mat, "name", "") for mat in target_materials],
@@ -1017,6 +1806,21 @@ def ensure_material(obj):
     return material
 
 
+def ensure_shared_material(objects, material_name):
+    material = bpy.data.materials.get(material_name)
+    if material is None:
+        material = bpy.data.materials.new(material_name)
+    material.use_nodes = True
+
+    for obj in objects:
+        if not getattr(obj, "data", None):
+            continue
+        obj.data.materials.clear()
+        obj.data.materials.append(material)
+
+    return material
+
+
 def get_principled_node(material):
     for node in material.node_tree.nodes:
         if node.type == "BSDF_PRINCIPLED":
@@ -1073,12 +1877,17 @@ def apply_image_to_material(obj, map_key, image_path):
     return False
 
 
-def apply_maps_to_low_materials(lows, output_dir, map_keys):
+def apply_maps_to_low_materials(lows, output_dir, map_keys, allow_fallback_for_all=False, shared_material_name=""):
     applied_count = 0
     missing = []
-    allow_fallback = len(lows) == 1
+    allow_fallback = allow_fallback_for_all or len(lows) == 1
+    target_lows = list(lows)
 
-    for low_obj in lows:
+    if shared_material_name and target_lows:
+        ensure_shared_material(target_lows, shared_material_name)
+        target_lows = target_lows[:1]
+
+    for low_obj in target_lows:
         for map_key in map_keys:
             image_path = find_map_file(output_dir, low_obj.name, map_key, allow_fallback)
             if not image_path:
@@ -1111,6 +1920,7 @@ def move_root_baked_files_to_textures(work_dir, output_dir):
 
 
 def cleanup_bake_temp_files(job):
+    work_dir = job.get("work_dir", "")
     temp_paths = [
         job.get("fbx_path"),
         job.get("script_path"),
@@ -1135,6 +1945,38 @@ def cleanup_bake_temp_files(job):
         except Exception as exc:
             print(f"PopTools Marmoset Baker failed to remove temp dir {source_texture_dir}: {exc}")
 
+    if work_dir and os.path.isdir(work_dir):
+        temp_dir_patterns = [
+            os.path.join(work_dir, "*.fbm"),
+        ]
+        for pattern in temp_dir_patterns:
+            for path in glob.glob(pattern):
+                if not os.path.isdir(path):
+                    continue
+                try:
+                    shutil.rmtree(path)
+                    removed.append(path)
+                except Exception as exc:
+                    print(f"PopTools Marmoset Baker failed to remove temp dir {path}: {exc}")
+
+        temp_file_patterns = [
+            os.path.join(work_dir, "*_bake.fbx"),
+            os.path.join(work_dir, "*_marmoset_bake.py"),
+            os.path.join(work_dir, "*_marmoset_status.json"),
+            os.path.join(work_dir, "*_marmoset_process.log"),
+            os.path.join(work_dir, "*.log"),
+            os.path.join(work_dir, "*.log.txt"),
+        ]
+        for pattern in temp_file_patterns:
+            for path in glob.glob(pattern):
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    os.remove(path)
+                    removed.append(path)
+                except Exception as exc:
+                    print(f"PopTools Marmoset Baker failed to remove temp file {path}: {exc}")
+
     return removed
 
 
@@ -1156,6 +1998,29 @@ def read_status_file(status_path):
             return json.load(status_file)
     except Exception:
         return None
+
+
+def launch_prepared_bake_job(toolbag_path, prepared_job, queued_jobs=None):
+    log_file = open(prepared_job["log_path"], "w", encoding="utf-8")
+    try:
+        process = subprocess.Popen(
+            [toolbag_path, prepared_job["script_path"]],
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
+    except Exception:
+        log_file.close()
+        raise
+
+    job = dict(prepared_job)
+    job.update({
+        "process": process,
+        "log_file": log_file,
+        "start_time": time.time(),
+        "toolbag_path": toolbag_path,
+        "queued_jobs": list(queued_jobs or []),
+    })
+    return job
 
 
 def poll_active_bake_job():
@@ -1180,6 +2045,8 @@ def poll_active_bake_job():
                 job["lows"],
                 job["output_dir"],
                 job["map_keys"],
+                allow_fallback_for_all=job.get("shared_output", False),
+                shared_material_name=job.get("shared_material_name", ""),
             )
         if missing:
             print("PopTools Marmoset Baker missing maps: " + ", ".join(missing))
@@ -1188,12 +2055,28 @@ def poll_active_bake_job():
         message = f"烘焙完成，耗时 {duration:.1f}s"
         if job["apply_to_low_material"]:
             message += f"，已回填 {applied_count} 张贴图"
-        if job.get("cleanup_when_done"):
+        queued_jobs = job.get("queued_jobs", [])
+        if job.get("cleanup_when_done") and not queued_jobs:
             removed = cleanup_bake_temp_files(job)
             if removed:
                 print("PopTools Marmoset Baker cleaned temp files: " + ", ".join(removed))
-        notify_user("Marmoset烘焙", message, "INFO")
         job["log_file"].close()
+        if queued_jobs:
+            try:
+                next_prepared_job = queued_jobs.pop(0)
+                ACTIVE_BAKE_JOB = launch_prepared_bake_job(
+                    job["toolbag_path"],
+                    next_prepared_job,
+                    queued_jobs,
+                )
+                notify_user("Marmoset烘焙", message + f"，继续下一组 ({len(queued_jobs) + 1} 组剩余)", "INFO")
+                return 1.0
+            except Exception as exc:
+                ACTIVE_BAKE_JOB = None
+                notify_user("Marmoset烘焙失败", f"启动下一组烘焙失败: {exc}", "ERROR")
+                return None
+
+        notify_user("Marmoset烘焙", message, "INFO")
         ACTIVE_BAKE_JOB = None
         return None
 
@@ -1222,7 +2105,7 @@ def poll_active_bake_job():
 class POPTOOLS_OT_marmoset_mark_low(Operator):
     """给选中网格添加_low后缀"""
     bl_idname = "poptools.marmoset_mark_low"
-    bl_label = "标记为_low"
+    bl_label = "手动标记为_low"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -1240,7 +2123,7 @@ class POPTOOLS_OT_marmoset_mark_low(Operator):
 class POPTOOLS_OT_marmoset_mark_high(Operator):
     """给选中网格添加_high后缀"""
     bl_idname = "poptools.marmoset_mark_high"
-    bl_label = "标记为_high"
+    bl_label = "手动标记为_high"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -1281,7 +2164,7 @@ class POPTOOLS_OT_marmoset_auto_mark_high_low(Operator):
 class POPTOOLS_OT_marmoset_generate_lowpoly(Operator):
     """复制选中高模并使用Decimate与智能UV生成低模"""
     bl_idname = "poptools.marmoset_generate_lowpoly"
-    bl_label = "一键生成低模"
+    bl_label = "一键快速低模"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -1372,15 +2255,33 @@ class POPTOOLS_OT_marmoset_ai_translate_model_name(Operator):
         if not raw_name:
             self.report({"WARNING"}, "请先输入需要翻译的模型名称")
             return {"CANCELLED"}
-
-        translated = ai_translate_text_tool(raw_name, MARMORSET_MODEL_TRANSLATE_PROMPT)
-        translated = normalize_identifier(translated)
-        if not translated:
-            self.report({"ERROR"}, "AI翻译结果为空")
+        if settings.model_name_translate_in_progress:
+            self.report({"WARNING"}, "模型名称AI翻译正在进行中")
             return {"CANCELLED"}
 
-        settings.model_name_prefix = translated
-        self.report({"INFO"}, "模型名称AI翻译完成")
+        ok, error = start_ai_translate_job(MARMORSET_MODEL_TRANSLATE_JOB_KEY, raw_name, MARMORSET_MODEL_TRANSLATE_PROMPT)
+        if not ok:
+            self.report({"ERROR"}, error)
+            return {"CANCELLED"}
+
+        settings.model_name_translate_in_progress = True
+        settings.model_name_translate_progress = 0.08
+        settings.model_name_translate_status = "正在启动AI翻译"
+        if not bpy.app.timers.is_registered(poll_marmoset_model_name_translation):
+            bpy.app.timers.register(poll_marmoset_model_name_translation, first_interval=0.2)
+        self.report({"INFO"}, "模型名称AI翻译已在后台启动")
+        return {"FINISHED"}
+
+
+class POPTOOLS_OT_marmoset_clear_model_name(Operator):
+    """清空模型名称输入框"""
+    bl_idname = "poptools.marmoset_clear_model_name"
+    bl_label = "清空模型名称"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        settings = context.scene.poptools_props.marmoset_baker_settings
+        settings.model_name_prefix = ""
         return {"FINISHED"}
 
 
@@ -1509,6 +2410,78 @@ class POPTOOLS_OT_high_asset_optimize_material_color(Operator):
         return {"FINISHED"}
 
 
+class POPTOOLS_OT_secure_texture_resources(Operator):
+    """收拢工程贴图到textures目录并改为相对路径"""
+    bl_idname = "poptools.secure_texture_resources"
+    bl_label = "资源贴图防丢失"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return hasattr(context.scene, "poptools_props")
+
+    def execute(self, context):
+        try:
+            stats = secure_project_textures(context)
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            notify_user("资源贴图防丢失", str(exc), "ERROR")
+            return {"CANCELLED"}
+
+        message = (
+            f"扫描 {stats['total_nodes']} 个贴图节点；"
+            f"复制 {stats['copied']} 张；"
+            f"修复 {stats['relinked']} 张；"
+            f"已安全 {stats['already_safe']} 张；"
+            f"打包贴图 {stats['packed']} 张"
+        )
+        if stats["missing"]:
+            message += f"；仍缺失 {len(stats['missing'])} 张"
+            print("PopTools missing texture resources: " + ", ".join(stats["missing"]))
+        if stats["errors"]:
+            message += f"；错误 {len(stats['errors'])} 个"
+            print("PopTools texture resource errors: " + ", ".join(stats["errors"]))
+
+        notify_user("资源贴图防丢失", message, "INFO" if not stats["missing"] and not stats["errors"] else "ERROR")
+        self.report({"INFO" if not stats["missing"] and not stats["errors"] else "WARNING"}, message)
+        return {"FINISHED"}
+
+
+class POPTOOLS_OT_smart_find_missing_textures(Operator):
+    """智能查找并重连当前工程中丢失的贴图"""
+    bl_idname = "poptools.smart_find_missing_textures"
+    bl_label = "智能查找丢失贴图"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return hasattr(context.scene, "poptools_props")
+
+    def execute(self, context):
+        try:
+            stats = smart_find_missing_textures(context)
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            notify_user("智能查找丢失贴图", str(exc), "ERROR")
+            return {"CANCELLED"}
+
+        message = (
+            f"扫描 {stats['total_nodes']} 个贴图节点；"
+            f"发现丢失 {stats['missing_nodes']} 张；"
+            f"重连 {stats['relinked']} 张"
+        )
+        if stats["still_missing"]:
+            message += f"；仍缺失 {len(stats['still_missing'])} 张"
+            print("PopTools still missing textures: " + ", ".join(stats["still_missing"]))
+        if stats["errors"]:
+            message += f"；错误 {len(stats['errors'])} 个"
+            print("PopTools smart find texture errors: " + ", ".join(stats["errors"]))
+
+        notify_user("智能查找丢失贴图", message, "INFO" if not stats["still_missing"] and not stats["errors"] else "ERROR")
+        self.report({"INFO" if not stats["still_missing"] and not stats["errors"] else "WARNING"}, message)
+        return {"FINISHED"}
+
+
 class POPTOOLS_OT_marmoset_one_click_bake(Operator):
     """导出高低模并调用Marmoset Toolbag烘焙"""
     bl_idname = "poptools.marmoset_one_click_bake"
@@ -1542,84 +2515,112 @@ class POPTOOLS_OT_marmoset_one_click_bake(Operator):
             return {"CANCELLED"}
 
         objects = get_candidate_meshes(context, settings)
-        pairs, leftovers = infer_high_low_pairs(objects, settings.model_name_prefix.strip())
-        if leftovers:
-            self.report({"ERROR"}, "存在无法自动配对的对象，请选择成对的高低模")
-            return {"CANCELLED"}
-        if not pairs:
-            self.report({"ERROR"}, "需要至少一个_low低模和一个_high高模")
-            return {"CANCELLED"}
-        lows = [pair["low"] for pair in pairs]
-        highs = [pair["high"] for pair in pairs]
-
+        active_object = context.view_layer.objects.active
+        active_name = clean_base_name(active_object.name) if active_object and active_object.type == "MESH" else ""
         work_dir = ensure_directory(resolve_work_dir(settings))
         output_dir = ensure_directory(os.path.join(work_dir, "textures"))
-        project_name = pairs[0]["base_name"] if len(pairs) == 1 else normalize_identifier(settings.model_name_prefix.strip() or pairs[0]["base_name"])
-        fbx_path = os.path.join(work_dir, f"{project_name}_bake.fbx")
-        script_path = os.path.join(work_dir, f"{project_name}_marmoset_bake.py")
-        status_path = os.path.join(work_dir, f"{project_name}_marmoset_status.json")
-        log_path = os.path.join(work_dir, f"{project_name}_marmoset_process.log")
-        output_file = os.path.join(output_dir, f"{project_name}.png")
+        prepared_jobs = []
 
-        if os.path.exists(status_path):
-            os.remove(status_path)
+        if settings.bake_mode == "MANY_TO_ONE":
+            group, leftovers = infer_many_to_one_group(objects, settings.model_name_prefix.strip())
+            if leftovers:
+                message = "存在未标记高低模的对象，请先在高低模识别区域完成标记: " + ", ".join(obj.name for obj in leftovers)
+                notify_user("Marmoset烘焙", message, "ERROR")
+                self.report({"ERROR"}, message)
+                return {"CANCELLED"}
+            if not group:
+                self.report({"ERROR"}, "多对一烘焙需要至少一个低模和一个高模")
+                return {"CANCELLED"}
+            lows = group["lows"]
+            highs = group["highs"]
+            missing_uv_names = missing_uv_mesh_names(lows)
+            if missing_uv_names:
+                message = "低模缺少UV，已停止烘焙: " + ", ".join(missing_uv_names)
+                notify_user("Marmoset烘焙", message, "ERROR")
+                self.report({"ERROR"}, message)
+                return {"CANCELLED"}
+            if "albedo" in map_keys:
+                missing_albedo_names = high_objects_missing_albedo_sources(highs)
+                if missing_albedo_names:
+                    message = "高模缺少Base Color贴图或顶点色，请给高模添加Base Color贴图或Vertex Color后再烘焙: " + ", ".join(missing_albedo_names)
+                    notify_user("Marmoset烘焙", message, "ERROR")
+                    self.report({"ERROR"}, message)
+                    return {"CANCELLED"}
+            try:
+                shared_material_name = f"package_{normalize_identifier(active_name or group['base_name'])}_mat"
+                prepared_jobs.append(prepare_single_bake_job(
+                    context,
+                    settings,
+                    map_keys,
+                    work_dir,
+                    output_dir,
+                    group["base_name"],
+                    lows,
+                    highs,
+                    alignment_pairs=group["pairs"],
+                    shared_output=True,
+                    shared_material_name=shared_material_name,
+                ))
+            except Exception as exc:
+                self.report({"ERROR"}, f"准备烘焙数据失败: {exc}")
+                return {"CANCELLED"}
+        else:
+            pairs, leftovers = infer_one_to_one_pairs(objects, settings.model_name_prefix.strip())
+            if leftovers:
+                message = "存在未标记或无法配对的对象，请先在高低模识别区域完成标记: " + ", ".join(obj.name for obj in leftovers)
+                notify_user("Marmoset烘焙", message, "ERROR")
+                self.report({"ERROR"}, message)
+                return {"CANCELLED"}
+            if not pairs:
+                self.report({"ERROR"}, "需要至少一个_low低模和一个_high高模")
+                return {"CANCELLED"}
+            lows = [pair["low"] for pair in pairs]
+            missing_uv_names = missing_uv_mesh_names(lows)
+            if missing_uv_names:
+                message = "低模缺少UV，已停止烘焙: " + ", ".join(missing_uv_names)
+                notify_user("Marmoset烘焙", message, "ERROR")
+                self.report({"ERROR"}, message)
+                return {"CANCELLED"}
+            if "albedo" in map_keys:
+                highs = [pair["high"] for pair in pairs]
+                missing_albedo_names = high_objects_missing_albedo_sources(highs)
+                if missing_albedo_names:
+                    message = "高模缺少Base Color贴图或顶点色，请给高模添加Base Color贴图或Vertex Color后再烘焙: " + ", ".join(missing_albedo_names)
+                    notify_user("Marmoset烘焙", message, "ERROR")
+                    self.report({"ERROR"}, message)
+                    return {"CANCELLED"}
+            try:
+                for pair in pairs:
+                    prepared_jobs.append(prepare_single_bake_job(
+                        context,
+                        settings,
+                        map_keys,
+                        work_dir,
+                        output_dir,
+                        pair["base_name"],
+                        [pair["low"]],
+                        [pair["high"]],
+                        alignment_pairs=[pair],
+                        shared_output=False,
+                    ))
+            except Exception as exc:
+                self.report({"ERROR"}, f"准备烘焙数据失败: {exc}")
+                return {"CANCELLED"}
 
-        try:
-            high_albedo_textures = export_bake_fbx(
-                context,
-                lows + highs,
-                fbx_path,
-                high_objects=highs,
-                include_material_textures="albedo" in map_keys,
-            )
-            config = {
-                "project_name": project_name,
-                "fbx_path": fbx_path.replace("\\", "/"),
-                "output_dir": output_dir.replace("\\", "/"),
-                "output_file": output_file.replace("\\", "/"),
-                "work_dir": work_dir.replace("\\", "/"),
-                "high_albedo_textures": high_albedo_textures,
-                "resolution": int(settings.resolution),
-                "output_bits": int(settings.output_bits),
-                "output_samples": int(settings.output_samples),
-                "edge_padding": settings.edge_padding,
-                "map_keys": map_keys,
-                "close_toolbag_when_done": bool(settings.close_toolbag_when_done),
-                "status_path": status_path.replace("\\", "/"),
-            }
-            write_toolbag_script(script_path, config)
-        except Exception as exc:
-            self.report({"ERROR"}, f"准备烘焙数据失败: {exc}")
+        if not prepared_jobs:
+            self.report({"ERROR"}, "没有可执行的Marmoset烘焙任务")
             return {"CANCELLED"}
 
         try:
-            log_file = open(log_path, "w", encoding="utf-8")
-            process = subprocess.Popen(
-                [toolbag_path, script_path],
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-            )
+            first_job = prepared_jobs[0]
+            queued_jobs = prepared_jobs[1:]
+            ACTIVE_BAKE_JOB = launch_prepared_bake_job(toolbag_path, first_job, queued_jobs)
         except Exception as exc:
             self.report({"ERROR"}, f"启动Toolbag失败: {exc}")
             return {"CANCELLED"}
 
-        ACTIVE_BAKE_JOB = {
-            "process": process,
-            "lows": list(lows),
-            "output_dir": output_dir,
-            "work_dir": work_dir,
-            "map_keys": list(map_keys),
-            "apply_to_low_material": bool(settings.apply_to_low_material),
-            "cleanup_when_done": bool(settings.close_toolbag_when_done),
-            "fbx_path": fbx_path,
-            "script_path": script_path,
-            "status_path": status_path,
-            "log_path": log_path,
-            "start_time": time.time(),
-            "log_file": log_file,
-        }
         bpy.app.timers.register(poll_active_bake_job, first_interval=1.0)
-        self.report({"INFO"}, f"已启动Marmoset异步烘焙，状态文件: {status_path}")
+        self.report({"INFO"}, f"已启动Marmoset异步烘焙，共 {len(prepared_jobs)} 个任务")
         return {"FINISHED"}
 
 
@@ -1663,11 +2664,18 @@ class POPTOOLS_PT_marmoset_baker(Panel):
         prefs = get_addon_preferences()
         asset_button = layout.row()
         asset_button.scale_y = 1.35
-        asset_button.operator("poptools.high_asset_one_click_process", icon="MOD_DECIM")
+        asset_button.operator("poptools.high_asset_one_click_process", icon="MESH_MONKEY")
 
         material_button = layout.row()
         material_button.scale_y = 1.2
         material_button.operator("poptools.high_asset_optimize_material_color", icon="MATERIAL")
+
+        secure_texture_button = layout.row()
+        secure_texture_button.scale_y = 1.2
+        secure_texture_button.operator("poptools.secure_texture_resources", icon="FILE_REFRESH")
+        smart_find_button = layout.row()
+        smart_find_button.scale_y = 1.2
+        smart_find_button.operator("poptools.smart_find_missing_textures", icon="VIEWZOOM")
 
         layout.label(text="快速减面", icon="MOD_DECIM")
         decimate_row = layout.row(align=True)
@@ -1679,13 +2687,21 @@ class POPTOOLS_PT_marmoset_baker(Panel):
             operator.ratio = ratio
 
         layout.separator()
-        layout.label(text="Marmoset一键烘焙", icon="RENDER_STILL")
+        lowpoly_box = layout.box()
+        lowpoly_box.prop(settings, "lowpoly_decimate_ratio")
+        lowpoly_button = lowpoly_box.row()
+        lowpoly_button.scale_y = 1.2
+        lowpoly_button.operator("poptools.marmoset_generate_lowpoly", icon="MOD_DECIM")
+
+        layout.separator()
+        layout.label(text="八猴烘焙设置", icon="MESH_MONKEY")
         layout.prop(prefs, "marmoset_toolbag_path", text="Toolbag路径")
         layout.prop(prefs, "marmoset_bake_work_dir", text="工作目录")
         path_row = layout.row(align=True)
         path_row.operator("poptools.marmoset_auto_detect_toolbag", icon="VIEWZOOM")
         path_row.operator("poptools.marmoset_open_addon_preferences", text="", icon="PREFERENCES")
         layout.prop(settings, "bake_scope")
+        layout.prop(settings, "bake_mode")
         layout.prop(settings, "resolution")
         layout.prop(settings, "output_bits")
         layout.prop(settings, "output_samples")
@@ -1693,33 +2709,36 @@ class POPTOOLS_PT_marmoset_baker(Panel):
 
         map_box = layout.box()
         map_box.label(text="烘焙通道", icon="TEXTURE")
-        map_col = map_box.column(align=True)
-        map_col.prop(settings, "bake_normal")
-        map_col.prop(settings, "bake_ao")
-        map_col.prop(settings, "bake_albedo")
-        map_col.prop(settings, "bake_curvature")
+        map_buttons = map_box.column(align=True)
+        map_buttons.use_property_split = False
+        map_row = map_buttons.row(align=True)
+        map_row.prop(settings, "bake_normal", text="Normal", toggle=True)
+        map_row.prop(settings, "bake_ao", text="AO", toggle=True)
+        map_row = map_buttons.row(align=True)
+        map_row.prop(settings, "bake_albedo", text="Albedo", toggle=True)
+        map_row.prop(settings, "bake_curvature", text="Curvature", toggle=True)
 
         role_box = layout.box()
         role_box.label(text="高低模识别", icon="OUTLINER_OB_MESH")
-        name_row = role_box.row(align=True)
-        name_row.prop(settings, "model_name_prefix")
+        name_col = role_box.column(align=True)
+        name_col.use_property_split = False
+        name_col.label(text="模型名称:")
+        name_row = name_col.row(align=True)
+        name_row.prop(settings, "model_name_prefix", text="")
+        name_row.operator("poptools.marmoset_clear_model_name", text="", icon="X")
         name_row.operator("poptools.marmoset_ai_translate_model_name", text="AI翻译", icon="OUTLINER_OB_LIGHT")
+        if settings.model_name_translate_in_progress or settings.model_name_translate_progress > 0:
+            progress_text = settings.model_name_translate_status or "AI翻译"
+            name_col.prop(settings, "model_name_translate_progress", text=progress_text, slider=True)
         role_box.label(text=f"低模: {len(lows)}  高模: {len(highs)}  未标记: {len(untagged)}")
         role_box.operator("poptools.marmoset_auto_mark_high_low", icon="SORTSIZE")
         row = role_box.row(align=True)
         row.operator("poptools.marmoset_mark_low", icon="IMPORT")
         row.operator("poptools.marmoset_mark_high", icon="EXPORT")
 
-        layout.separator()
-        lowpoly_box = layout.box()
-        lowpoly_box.prop(settings, "lowpoly_decimate_ratio")
-        lowpoly_button = lowpoly_box.row()
-        lowpoly_button.scale_y = 1.2
-        lowpoly_button.operator("poptools.marmoset_generate_lowpoly", icon="MOD_DECIM")
-        layout.separator()
         bake_row = layout.row()
-        bake_row.scale_y = 1.4
-        bake_row.operator("poptools.marmoset_one_click_bake", icon="RENDER_STILL")
+        bake_row.scale_y = 1.68
+        bake_row.operator("poptools.marmoset_one_click_bake", icon="TEXTURE")
         layout.prop(settings, "apply_to_low_material")
         layout.prop(settings, "close_toolbag_when_done")
         layout.operator("poptools.marmoset_open_work_dir", icon="FILE_FOLDER")
@@ -1731,11 +2750,14 @@ classes = (
     POPTOOLS_OT_marmoset_auto_mark_high_low,
     POPTOOLS_OT_marmoset_generate_lowpoly,
     POPTOOLS_OT_marmoset_ai_translate_model_name,
+    POPTOOLS_OT_marmoset_clear_model_name,
     POPTOOLS_OT_marmoset_auto_detect_toolbag,
     POPTOOLS_OT_marmoset_open_addon_preferences,
     POPTOOLS_OT_high_asset_one_click_process,
     POPTOOLS_OT_high_asset_quick_decimate,
     POPTOOLS_OT_high_asset_optimize_material_color,
+    POPTOOLS_OT_secure_texture_resources,
+    POPTOOLS_OT_smart_find_missing_textures,
     POPTOOLS_OT_marmoset_one_click_bake,
     POPTOOLS_OT_marmoset_open_work_dir,
     POPTOOLS_PT_marmoset_baker,

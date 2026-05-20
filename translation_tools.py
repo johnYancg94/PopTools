@@ -9,6 +9,9 @@ import bmesh
 import json
 import sys
 import os
+import time
+import threading
+import re
 from bpy.types import Panel, Operator, PropertyGroup
 from bpy.props import StringProperty, EnumProperty, BoolProperty, CollectionProperty
 from .doubao_responses import DEFAULT_DOUBAO_MODEL, build_translation_input, extract_response_text
@@ -33,6 +36,83 @@ try:
 except ImportError:
     OPENAI_SDK_AVAILABLE = False
     print("[翻译工具] OpenAI SDK未安装，请运行: pip install --upgrade 'openai>=1.0'")
+
+
+DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
+DOUBAO_REQUEST_TIMEOUT = 15.0
+_DOUBAO_CLIENT_CACHE = {}
+_DOUBAO_TRANSLATION_CACHE = {}
+_AI_TRANSLATION_JOBS = {}
+_AI_TRANSLATION_JOBS_LOCK = threading.Lock()
+LOCAL_TRANSLATION_DICTIONARY_PATH = os.path.join(os.path.dirname(__file__), "local_translation_dictionary.json")
+
+
+def load_local_translation_dictionary():
+    try:
+        with open(LOCAL_TRANSLATION_DICTIONARY_PATH, "r", encoding="utf-8") as dictionary_file:
+            payload = json.load(dictionary_file)
+    except Exception as exc:
+        print(f"[AI翻译工具] 本地词典读取失败: {exc}")
+        return {}, {}
+
+    exact = payload.get("exact", {})
+    tokens = payload.get("tokens", {})
+    if not isinstance(exact, dict):
+        exact = {}
+    if not isinstance(tokens, dict):
+        tokens = {}
+    return exact, tokens
+
+
+LOCAL_TRANSLATION_EXACT, LOCAL_TRANSLATION_TOKENS = load_local_translation_dictionary()
+
+
+def to_lower_camel(words):
+    cleaned_words = [word for word in words if word]
+    if not cleaned_words:
+        return ""
+    first = cleaned_words[0][:1].lower() + cleaned_words[0][1:]
+    rest = [word[:1].upper() + word[1:] for word in cleaned_words[1:]]
+    return first + "".join(rest)
+
+
+def sanitize_local_translation(text):
+    text = re.sub(r"[^0-9A-Za-z]+", "", text or "")
+    if not text:
+        return ""
+    return text[:1].lower() + text[1:]
+
+
+def local_rule_translate(input_text):
+    """常见资产名本地翻译；命中时不调用AI。"""
+    text = (input_text or "").strip()
+    if not text:
+        return ""
+
+    compact_text = re.sub(r"[\s_\\/\-·,，.。:：;；()（）\[\]【】]+", "", text)
+    if not compact_text:
+        return ""
+
+    exact = LOCAL_TRANSLATION_EXACT.get(text) or LOCAL_TRANSLATION_EXACT.get(compact_text)
+    if exact:
+        return sanitize_local_translation(exact)
+
+    token_keys = sorted(LOCAL_TRANSLATION_TOKENS.keys(), key=len, reverse=True)
+    words = []
+    index = 0
+    while index < len(compact_text):
+        matched_key = ""
+        for token_key in token_keys:
+            if compact_text.startswith(token_key, index):
+                matched_key = token_key
+                break
+        if not matched_key:
+            return ""
+        words.append(LOCAL_TRANSLATION_TOKENS[matched_key])
+        index += len(matched_key)
+
+    return sanitize_local_translation(to_lower_camel(words))
+
 
 # 腾讯云翻译API配置
 class TencentTranslateAPI:
@@ -172,7 +252,7 @@ class TencentTranslateAPI:
 class DoubaoTranslateAPI:
     """Doubao AI翻译API封装类"""
     
-    def __init__(self, api_key="", base_url="https://ark.cn-beijing.volces.com/api/v3", model=DEFAULT_DOUBAO_MODEL):
+    def __init__(self, api_key="", base_url=DOUBAO_BASE_URL, model=DEFAULT_DOUBAO_MODEL):
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
@@ -200,6 +280,8 @@ class DoubaoTranslateAPI:
             self.client = OpenAI(
                 base_url=self.base_url,
                 api_key=self.api_key,
+                timeout=DOUBAO_REQUEST_TIMEOUT,
+                max_retries=0,
             )
             
         except Exception as e:
@@ -210,20 +292,62 @@ class DoubaoTranslateAPI:
         """从插件首选项创建API实例"""
         prefs = bpy.context.preferences.addons[__package__].preferences
         
-        # 首先尝试从解密方法获取API密钥
-        api_key = prefs.get_decrypted_doubao_api_key()
+        # 手动配置字段已被解锁流程写入时，优先直接复用，避免每次点击都重新解密。
+        api_key = getattr(prefs, "doubao_api_key", "").strip()
+        if not api_key:
+            api_key = prefs.get_decrypted_doubao_api_key()
         
         if not api_key:
             # 如果解密失败，尝试从环境变量获取
             api_key = os.getenv('ARK_API_KEY')
         
         print(f"[调试] from_preferences: doubao_api_key='{api_key[:8]}...' if api_key else 'None'")
-        
-        return cls(
+
+        cache_key = (api_key, DOUBAO_BASE_URL, DEFAULT_DOUBAO_MODEL)
+        cached_api = _DOUBAO_CLIENT_CACHE.get(cache_key)
+        if cached_api:
+            return cached_api
+
+        api = cls(
             api_key=api_key,
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            base_url=DOUBAO_BASE_URL,
             model=DEFAULT_DOUBAO_MODEL
         )
+        _DOUBAO_CLIENT_CACHE[cache_key] = api
+        return api
+
+    def _translate_with_chat_completions(self, text, system_prompt):
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+            max_tokens=32,
+        )
+        choices = getattr(response, "choices", []) or []
+        if not choices:
+            return ""
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", "") if message else ""
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    parts.append(item.get("text", ""))
+                else:
+                    parts.append(getattr(item, "text", ""))
+            content = "".join(parts)
+        return str(content).strip()
+
+    def _translate_with_responses(self, text, system_prompt):
+        response = self.client.responses.create(
+            model=self.model,
+            input=build_translation_input(system_prompt, text),
+            max_output_tokens=32,
+        )
+        return extract_response_text(response)
     
     def translate_text(self, text, system_prompt=None):
         """使用AI翻译文本"""
@@ -238,21 +362,36 @@ class DoubaoTranslateAPI:
         if system_prompt is None:
             system_prompt = "请将输入的中文动作名称翻译为简洁的英文。要求:\n1. 尽量使用单个单词\n2. 必须简洁精确只表达最核心的语义即可\n3. 不含任何符号和空格\n4. 首字母小写\n5. 多词组合时,首字母小写,后续单词首字母大写,例如: walkRunFast"
             
+        cache_key = (self.model, system_prompt, text.strip())
+        cached_translation = _DOUBAO_TRANSLATION_CACHE.get(cache_key)
+        if cached_translation:
+            print(f"[AI翻译调试] 使用缓存翻译: '{cached_translation}'")
+            return {
+                "translated_text": cached_translation,
+                "source_lang": "zh",
+                "target_lang": "en"
+            }
+
         print(f"[AI翻译调试] 开始翻译: '{text}'")
         print(f"[AI翻译调试] 使用模型: {self.model}")
         print(f"[AI翻译调试] API Key: {self.api_key[:8]}...")
             
         try:
-            response = self.client.responses.create(
-                model=self.model,
-                input=build_translation_input(system_prompt, text),
-            )
+            started_at = time.perf_counter()
+            try:
+                translated_text = self._translate_with_chat_completions(text, system_prompt)
+                api_mode = "chat.completions"
+            except Exception as chat_exc:
+                print(f"[AI翻译调试] Chat Completions调用失败，回退Responses: {chat_exc}")
+                translated_text = self._translate_with_responses(text, system_prompt)
+                api_mode = "responses"
             
-            print(f"[AI翻译调试] API响应成功")
+            elapsed = time.perf_counter() - started_at
+            print(f"[AI翻译调试] API响应成功: mode={api_mode}, elapsed={elapsed:.2f}s")
             
-            translated_text = extract_response_text(response)
             if not translated_text:
                 return {"error": "AI翻译响应为空"}
+            _DOUBAO_TRANSLATION_CACHE[cache_key] = translated_text
             print(f"[AI翻译调试] 翻译成功: '{translated_text}'")
             
             return {
@@ -553,6 +692,11 @@ def ai_translate_text_tool(input_text, system_prompt=None):
     # 检查输入文本
     if not input_text or not input_text.strip():
         return ""
+
+    local_translation = local_rule_translate(input_text)
+    if local_translation:
+        print(f"[AI翻译工具] 使用本地词典: '{input_text}' -> '{local_translation}'")
+        return local_translation
     
     # 检查OpenAI SDK是否可用
     if not OPENAI_SDK_AVAILABLE:
@@ -589,6 +733,114 @@ def ai_translate_text_tool(input_text, system_prompt=None):
         import traceback
         traceback.print_exc()
         return input_text  # 翻译失败时返回原文本
+
+
+def start_ai_translate_job(job_key, input_text, system_prompt=None):
+    """启动后台AI翻译任务。API对象在主线程创建，避免后台线程读取Blender配置。"""
+    if not input_text or not input_text.strip():
+        return False, "请输入要翻译的文本"
+
+    local_translation = local_rule_translate(input_text)
+    if local_translation:
+        with _AI_TRANSLATION_JOBS_LOCK:
+            _AI_TRANSLATION_JOBS[job_key] = {
+                "state": "done",
+                "input_text": input_text,
+                "system_prompt": system_prompt,
+                "translated_text": local_translation,
+                "error": "",
+                "progress": 1.0,
+                "message": "使用本地词典",
+                "started_at": time.time(),
+            }
+        print(f"[AI翻译工具] 使用本地词典: '{input_text}' -> '{local_translation}'")
+        return True, ""
+
+    if not OPENAI_SDK_AVAILABLE:
+        return False, "OpenAI SDK未安装，请运行: pip install --upgrade 'openai>=1.0'"
+
+    with _AI_TRANSLATION_JOBS_LOCK:
+        current_job = _AI_TRANSLATION_JOBS.get(job_key)
+        if current_job and current_job.get("state") == "running":
+            return False, "AI翻译正在进行中"
+
+    try:
+        api = DoubaoTranslateAPI.from_preferences()
+    except Exception as exc:
+        return False, f"初始化AI翻译失败: {exc}"
+
+    job = {
+        "state": "running",
+        "input_text": input_text,
+        "system_prompt": system_prompt,
+        "translated_text": "",
+        "error": "",
+        "progress": 0.08,
+        "message": "正在连接AI翻译",
+        "started_at": time.time(),
+    }
+
+    with _AI_TRANSLATION_JOBS_LOCK:
+        _AI_TRANSLATION_JOBS[job_key] = job
+
+    def worker():
+        try:
+            with _AI_TRANSLATION_JOBS_LOCK:
+                if job_key in _AI_TRANSLATION_JOBS:
+                    _AI_TRANSLATION_JOBS[job_key]["progress"] = 0.25
+                    _AI_TRANSLATION_JOBS[job_key]["message"] = "正在请求AI翻译"
+
+            result = api.translate_text(input_text, system_prompt)
+
+            with _AI_TRANSLATION_JOBS_LOCK:
+                stored_job = _AI_TRANSLATION_JOBS.get(job_key)
+                if not stored_job:
+                    return
+                if isinstance(result, dict) and "translated_text" in result:
+                    stored_job["translated_text"] = result["translated_text"]
+                    stored_job["state"] = "done"
+                    stored_job["progress"] = 1.0
+                    stored_job["message"] = "AI翻译完成"
+                else:
+                    stored_job["error"] = result.get("error", "AI翻译失败") if isinstance(result, dict) else "AI翻译失败"
+                    stored_job["state"] = "error"
+                    stored_job["progress"] = 1.0
+                    stored_job["message"] = "AI翻译失败"
+        except Exception as exc:
+            with _AI_TRANSLATION_JOBS_LOCK:
+                stored_job = _AI_TRANSLATION_JOBS.get(job_key)
+                if stored_job:
+                    stored_job["error"] = str(exc)
+                    stored_job["state"] = "error"
+                    stored_job["progress"] = 1.0
+                    stored_job["message"] = "AI翻译失败"
+
+    thread = threading.Thread(target=worker, name=f"PopToolsAITranslate-{job_key}", daemon=True)
+    thread.start()
+    return True, ""
+
+
+def get_ai_translate_job(job_key):
+    with _AI_TRANSLATION_JOBS_LOCK:
+        job = _AI_TRANSLATION_JOBS.get(job_key)
+        return dict(job) if job else None
+
+
+def advance_ai_translate_job_progress(job_key, step=0.025, limit=0.9):
+    with _AI_TRANSLATION_JOBS_LOCK:
+        job = _AI_TRANSLATION_JOBS.get(job_key)
+        if not job or job.get("state") != "running":
+            return dict(job) if job else None
+        job["progress"] = min(limit, float(job.get("progress", 0.0)) + step)
+        if job["progress"] > 0.55:
+            job["message"] = "等待AI翻译结果"
+        return dict(job)
+
+
+def clear_ai_translate_job(job_key):
+    with _AI_TRANSLATION_JOBS_LOCK:
+        _AI_TRANSLATION_JOBS.pop(job_key, None)
+
 
 class POPTOOLS_OT_swap_languages(Operator):
     """交换源语言和目标语言"""

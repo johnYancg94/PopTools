@@ -1,10 +1,17 @@
 # PopTools - Blender - 蜂鸟游戏资产制作工具集
 
-![Blender Version](https://img.shields.io/badge/Blender-4.2+-blue.svg)
+![Blender Version](https://img.shields.io/badge/Blender-4.5+%20%7C%205.0%20%7C%205.1-blue.svg)
 ![Python Version](https://img.shields.io/badge/Python-3.11+-green.svg)
 ![License](https://img.shields.io/badge/License-GPL--3.0--or--later-yellow.svg)
 
 ## 版本更新日志 / Version Changelog
+### 4.1.0 (2026)
+- **版本更新**: 插件版本升级到 4.1.0
+- **兼容性**: 支持版本调整为 Blender 4.5+、5.0、5.1
+- **翻译优化**: AI翻译改为异步执行，新增本地快速翻译词典并扩充三消与海岛资产常用词
+- **UI优化**: 新增 3D View Header 全局/局部坐标系快捷按钮
+- **文档更新**: 同步 README 与 Extension manifest 的版本和支持版本信息
+
 ### 4.0.0 (2026)
 - **新增功能**: 新增 AI资产处理工具面板，整合高模资产一键处理、材质颜色优化、快速减面和 Marmoset 一键烘焙流程
 - **Marmoset烘焙**: 支持从 Blender 自动导出高低模、调用 Marmoset Toolbag 烘焙 Normal、Albedo、AO、Curvature，并回写贴图到低模材质
@@ -110,10 +117,10 @@
 - **架构重构**: 采用全新的简化架构，扁平化模块结构
 - **统一管理**: 集中化属性和偏好设置管理
 - **模块化设计**: 各功能模块独立，支持单独启用/禁用
-- **兼容性**: 全面支持Blender 4.2+版本
+- **兼容性**: 全面支持Blender 4.5+、5.0、5.1版本
 ## 概述 / Overview
 
-PopTools是一个专为Blender 4.2+设计的蜂鸟常用游戏资产制作工具集，旨在简化和加速3D游戏资产的创建、处理和导出流程。该插件采用模块化设计，支持多种游戏引擎的资产导出需求，特别针对Unity、3DCoat进行了优化。
+PopTools是一个专为Blender 4.5+、5.0、5.1设计的蜂鸟常用游戏资产制作工具集，旨在简化和加速3D游戏资产的创建、处理和导出流程。该插件采用模块化设计，支持多种游戏引擎的资产导出需求，特别针对Unity、3DCoat进行了优化。
 
 ## 主要特性 / Key Features
 
@@ -126,7 +133,7 @@ PopTools是一个专为Blender 4.2+设计的蜂鸟常用游戏资产制作工具
 
 ## 系统要求 / System Requirements
 
-- **Blender版本**: 4.2.0 或更高版本
+- **Blender版本**: 4.5 或更高版本，已适配 Blender 5.0、5.1
 - **Python版本**: 3.11+ (Blender内置)
 - **操作系统**: Windows 10/11, macOS 10.15+, Linux Ubuntu 20.04+
 - **硬件要求**: 建议8GB RAM，支持OpenGL 3.3的显卡
@@ -136,9 +143,9 @@ PopTools是一个专为Blender 4.2+设计的蜂鸟常用游戏资产制作工具
 ### 方法一：手动安装
 1. 下载最新版本的PopTools插件包
 2. 解压到Blender插件目录：
-   - **Windows**: `%APPDATA%\Blender Foundation\Blender\4.2\scripts\addons\`
-   - **macOS**: `~/Library/Application Support/Blender/4.2/scripts/addons/`
-   - **Linux**: `~/.config/blender/4.2/scripts/addons/`
+   - **Windows**: `%APPDATA%\Blender Foundation\Blender\5.1\scripts\addons\`
+   - **macOS**: `~/Library/Application Support/Blender/5.1/scripts/addons/`
+   - **Linux**: `~/.config/blender/5.1/scripts/addons/`
 3. 启动Blender，进入 `编辑 > 偏好设置 > 插件`
 4. 搜索"PopTools"并启用插件
 5. 点击"保存偏好设置"
