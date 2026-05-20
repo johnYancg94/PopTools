@@ -5,6 +5,13 @@
 ![License](https://img.shields.io/badge/License-GPL--3.0--or--later-yellow.svg)
 
 ## 版本更新日志 / Version Changelog
+### 4.2.0 (2026)
+- **版本更新**: 插件版本升级到 4.2.0
+- **AI翻译**: 新增 DeepSeek 模型支持并默认使用 DeepSeek，保留豆包可选项
+- **面数显示**: AI资产处理工具新增选中模型 Tris 视口显示，按三角面数分级着色
+- **字体资源**: 面数显示内置 Mikado Black 字体并支持千分位数字格式
+- **稳定性**: 优化豆包/DeepSeek响应解析、超时处理和命名提示词一致性
+
 ### 4.1.0 (2026)
 - **版本更新**: 插件版本升级到 4.1.0
 - **兼容性**: 支持版本调整为 Blender 4.5+、5.0、5.1

@@ -14,7 +14,16 @@ import threading
 import re
 from bpy.types import Panel, Operator, PropertyGroup
 from bpy.props import StringProperty, EnumProperty, BoolProperty, CollectionProperty
-from .doubao_responses import DEFAULT_DOUBAO_MODEL, build_translation_input, extract_response_text
+from .doubao_responses import (
+    DEFAULT_DEEPSEEK_MODEL,
+    DEFAULT_DOUBAO_MODEL,
+    build_chat_messages,
+    build_translation_input,
+    extract_chat_completion_text,
+    extract_response_text,
+    summarize_response,
+    summarize_chat_completion_response,
+)
 from .utils import show_message_box
 
 # 尝试导入腾讯云SDK
@@ -29,7 +38,7 @@ except ImportError:
     SDK_AVAILABLE = False
     print("[翻译工具] 腾讯云SDK未安装，请运行: pip install tencentcloud-sdk-python")
 
-# 尝试导入OpenAI SDK（用于Doubao）
+# 尝试导入OpenAI SDK（用于豆包/DeepSeek）
 try:
     from openai import OpenAI
     OPENAI_SDK_AVAILABLE = True
@@ -39,12 +48,15 @@ except ImportError:
 
 
 DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-DOUBAO_REQUEST_TIMEOUT = 15.0
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DOUBAO_REQUEST_TIMEOUT = 30.0
 _DOUBAO_CLIENT_CACHE = {}
+_DEEPSEEK_CLIENT_CACHE = {}
 _DOUBAO_TRANSLATION_CACHE = {}
 _AI_TRANSLATION_JOBS = {}
 _AI_TRANSLATION_JOBS_LOCK = threading.Lock()
 LOCAL_TRANSLATION_DICTIONARY_PATH = os.path.join(os.path.dirname(__file__), "local_translation_dictionary.json")
+DEFAULT_AI_TRANSLATION_PROMPT = "请将输入的中文动作名称翻译为简洁的英文。要求:\n1. 尽量使用单个单词\n2. 必须简洁精确只表达最核心的语义即可\n3. 不含任何符号和空格\n4. 首字母小写\n5. 多词组合时,首字母小写,后续单词首字母大写,例如: walkRunFast"
 
 
 def load_local_translation_dictionary():
@@ -268,7 +280,8 @@ class DoubaoTranslateAPI:
         """初始化OpenAI客户端"""
         try:
             # 验证API密钥
-            print(f"[调试] DoubaoTranslateAPI._init_client: api_key='{self.api_key[:8]}...' if self.api_key else 'None'")
+            masked_key = f"{self.api_key[:8]}..." if self.api_key else "None"
+            print(f"[调试] DoubaoTranslateAPI._init_client: api_key='{masked_key}'")
             
             if not self.api_key:
                 raise Exception(f"API密钥不能为空: api_key='{self.api_key}'")
@@ -301,7 +314,8 @@ class DoubaoTranslateAPI:
             # 如果解密失败，尝试从环境变量获取
             api_key = os.getenv('ARK_API_KEY')
         
-        print(f"[调试] from_preferences: doubao_api_key='{api_key[:8]}...' if api_key else 'None'")
+        masked_key = f"{api_key[:8]}..." if api_key else "None"
+        print(f"[调试] from_preferences: doubao_api_key='{masked_key}'")
 
         cache_key = (api_key, DOUBAO_BASE_URL, DEFAULT_DOUBAO_MODEL)
         cached_api = _DOUBAO_CLIENT_CACHE.get(cache_key)
@@ -326,20 +340,7 @@ class DoubaoTranslateAPI:
             temperature=0,
             max_tokens=32,
         )
-        choices = getattr(response, "choices", []) or []
-        if not choices:
-            return ""
-        message = getattr(choices[0], "message", None)
-        content = getattr(message, "content", "") if message else ""
-        if isinstance(content, list):
-            parts = []
-            for item in content:
-                if isinstance(item, dict):
-                    parts.append(item.get("text", ""))
-                else:
-                    parts.append(getattr(item, "text", ""))
-            content = "".join(parts)
-        return str(content).strip()
+        return extract_chat_completion_text(response)
 
     def _translate_with_responses(self, text, system_prompt):
         response = self.client.responses.create(
@@ -347,7 +348,10 @@ class DoubaoTranslateAPI:
             input=build_translation_input(system_prompt, text),
             max_output_tokens=32,
         )
-        return extract_response_text(response)
+        translated_text = extract_response_text(response)
+        if not translated_text:
+            print(f"[AI翻译调试] Responses响应内容为空: {summarize_response(response)}")
+        return translated_text
     
     def translate_text(self, text, system_prompt=None):
         """使用AI翻译文本"""
@@ -360,7 +364,7 @@ class DoubaoTranslateAPI:
             
         # 默认系统提示词
         if system_prompt is None:
-            system_prompt = "请将输入的中文动作名称翻译为简洁的英文。要求:\n1. 尽量使用单个单词\n2. 必须简洁精确只表达最核心的语义即可\n3. 不含任何符号和空格\n4. 首字母小写\n5. 多词组合时,首字母小写,后续单词首字母大写,例如: walkRunFast"
+            system_prompt = DEFAULT_AI_TRANSLATION_PROMPT
             
         cache_key = (self.model, system_prompt, text.strip())
         cached_translation = _DOUBAO_TRANSLATION_CACHE.get(cache_key)
@@ -404,6 +408,136 @@ class DoubaoTranslateAPI:
             error_detail = f"AI翻译错误: {str(e)}"
             print(f"[AI翻译调试] {error_detail}")
             return {"error": error_detail}
+
+
+class DeepSeekTranslateAPI:
+    """DeepSeek AI翻译API封装类"""
+
+    def __init__(self, api_key="", base_url=DEEPSEEK_BASE_URL, model=DEFAULT_DEEPSEEK_MODEL):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+
+        if not OPENAI_SDK_AVAILABLE:
+            raise ImportError("OpenAI SDK未安装，请运行: pip install --upgrade 'openai>=1.0'")
+
+        self._init_client()
+
+    def _init_client(self):
+        """初始化OpenAI兼容客户端"""
+        try:
+            masked_key = f"{self.api_key[:8]}..." if self.api_key else "None"
+            print(f"[调试] DeepSeekTranslateAPI._init_client: api_key='{masked_key}'")
+
+            if not self.api_key:
+                raise Exception(f"API密钥不能为空: api_key='{self.api_key}'")
+
+            if not self.api_key.strip():
+                raise Exception(f"API密钥不能为空白字符: api_key='{self.api_key}'")
+
+            self.client = OpenAI(
+                base_url=self.base_url,
+                api_key=self.api_key,
+                timeout=DOUBAO_REQUEST_TIMEOUT,
+                max_retries=0,
+            )
+
+        except Exception as e:
+            raise Exception(f"初始化DeepSeek客户端失败: {str(e)}")
+
+    @classmethod
+    def from_preferences(cls):
+        """从插件首选项创建API实例"""
+        prefs = bpy.context.preferences.addons[__package__].preferences
+
+        api_key = prefs.get_decrypted_deepseek_api_key()
+
+        if not api_key:
+            api_key = os.getenv("DEEPSEEK_API_KEY", "")
+
+        masked_key = f"{api_key[:8]}..." if api_key else "None"
+        print(f"[调试] from_preferences: deepseek_api_key='{masked_key}'")
+
+        cache_key = (api_key, DEEPSEEK_BASE_URL, DEFAULT_DEEPSEEK_MODEL)
+        cached_api = _DEEPSEEK_CLIENT_CACHE.get(cache_key)
+        if cached_api:
+            return cached_api
+
+        api = cls(
+            api_key=api_key,
+            base_url=DEEPSEEK_BASE_URL,
+            model=DEFAULT_DEEPSEEK_MODEL,
+        )
+        _DEEPSEEK_CLIENT_CACHE[cache_key] = api
+        return api
+
+    def translate_text(self, text, system_prompt=None):
+        """使用DeepSeek翻译文本"""
+        if not self.api_key:
+            return {"error": "请配置DeepSeek API密钥（插件首选项或DEEPSEEK_API_KEY环境变量）"}
+
+        if not self.api_key.strip():
+            return {"error": "DeepSeek API密钥不能为空，请检查插件首选项或DEEPSEEK_API_KEY环境变量"}
+
+        if system_prompt is None:
+            system_prompt = DEFAULT_AI_TRANSLATION_PROMPT
+
+        cache_key = (self.model, system_prompt, text.strip())
+        cached_translation = _DOUBAO_TRANSLATION_CACHE.get(cache_key)
+        if cached_translation:
+            print(f"[AI翻译调试] 使用缓存翻译: '{cached_translation}'")
+            return {
+                "translated_text": cached_translation,
+                "source_lang": "zh",
+                "target_lang": "en"
+            }
+
+        print(f"[AI翻译调试] 开始翻译: '{text}'")
+        print(f"[AI翻译调试] 使用DeepSeek模型: {self.model}")
+        print(f"[AI翻译调试] DeepSeek API Key: {self.api_key[:8]}...")
+
+        try:
+            started_at = time.perf_counter()
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=build_chat_messages(system_prompt, text),
+                stream=False,
+                temperature=0,
+                max_tokens=32,
+                extra_body={"thinking": {"type": "disabled"}},
+            )
+
+            elapsed = time.perf_counter() - started_at
+            print(f"[AI翻译调试] DeepSeek API响应成功: elapsed={elapsed:.2f}s")
+
+            translated_text = extract_chat_completion_text(response)
+            if not translated_text:
+                print(f"[AI翻译调试] DeepSeek响应内容为空: {summarize_chat_completion_response(response)}")
+                return {"error": "DeepSeek AI翻译响应为空"}
+            _DOUBAO_TRANSLATION_CACHE[cache_key] = translated_text
+            print(f"[AI翻译调试] DeepSeek翻译成功: '{translated_text}'")
+
+            return {
+                "translated_text": translated_text,
+                "source_lang": "zh",
+                "target_lang": "en"
+            }
+
+        except Exception as e:
+            error_detail = f"DeepSeek AI翻译错误: {str(e)}"
+            print(f"[AI翻译调试] {error_detail}")
+            return {"error": error_detail}
+
+
+def create_ai_translator_from_preferences():
+    """按插件首选项创建AI翻译器"""
+    prefs = bpy.context.preferences.addons[__package__].preferences
+    provider = getattr(prefs, "ai_translation_provider", "DEEPSEEK")
+
+    if provider == "DEEPSEEK":
+        return DeepSeekTranslateAPI.from_preferences()
+
+    return DoubaoTranslateAPI.from_preferences()
 
 
 # 翻译工具属性组
@@ -518,7 +652,7 @@ class POPTOOLS_OT_ai_translate_text(Operator):
     """AI翻译文本操作符"""
     bl_idname = "poptools.ai_translate_text"
     bl_label = "AI翻译文本"
-    bl_description = "使用Doubao AI翻译文本"
+    bl_description = "使用首选项中选择的AI模型翻译文本"
     bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
@@ -535,7 +669,7 @@ class POPTOOLS_OT_ai_translate_text(Operator):
         
         try:
             # 从插件首选项创建AI翻译API实例
-            translator = DoubaoTranslateAPI.from_preferences()
+            translator = create_ai_translator_from_preferences()
         except Exception as e:
             show_message_box(f"AI API配置错误: {str(e)}", "配置错误", 'ERROR')
             return {'CANCELLED'}
@@ -684,7 +818,7 @@ def ai_translate_text_tool(input_text, system_prompt=None):
     
     Args:
         input_text (str): 要翻译的文本
-        system_prompt (str): 系统提示词，如果为None则使用默认提示词
+        system_prompt (str): 模块传入的提示词；豆包和DeepSeek共用同一套提示词内容
     
     Returns:
         str: 翻译后的文本，如果翻译失败返回原文本
@@ -705,7 +839,7 @@ def ai_translate_text_tool(input_text, system_prompt=None):
     
     try:
         # 从环境变量或插件首选项获取API配置
-        api = DoubaoTranslateAPI.from_preferences()
+        api = create_ai_translator_from_preferences()
         print(f"[AI翻译工具] 从配置获取API")
         
         print(f"[AI翻译工具] 开始AI翻译: '{input_text}'")
@@ -765,7 +899,7 @@ def start_ai_translate_job(job_key, input_text, system_prompt=None):
             return False, "AI翻译正在进行中"
 
     try:
-        api = DoubaoTranslateAPI.from_preferences()
+        api = create_ai_translator_from_preferences()
     except Exception as exc:
         return False, f"初始化AI翻译失败: {exc}"
 

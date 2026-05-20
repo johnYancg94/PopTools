@@ -65,7 +65,8 @@ class EncryptedAPIKeys:
         self.encrypted_keys = {
             "tencent_secret_id": "5vO2a99KvqyDpiXXz-_gHpwfbeCnP_SDovdggbgtoenG9857",
             "tencent_secret_key": "_8qFWMNrnb7Ipjjy_6nOB_5cYZLqM_G-7OR70LYbg-g=",
-            "doubao_api_key": "lY3NS5kVwfbWujGOovGNWp9Lde7tboH0t4cTguF09eXGgMca"
+            "doubao_api_key": "lY3NS5kVwfbWujGOovGNWp9Lde7tboH0t4cTguF09eXGgMca",
+            "deepseek_api_key": "1NPSFswQk_fJ5TaJ8euOX5wfabfsa47htNMahesoobjC2Zo="
         }
     
     def get_decrypted_key(self, key_name, password="fengniao666"):

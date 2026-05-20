@@ -32,7 +32,7 @@ from .translation_tools import (
 # ============================================================================
 
 GENERIC_MODEL_TRANSLATE_PROMPT = (
-    "你正在为游戏资产生成英文命名片段，用于 Blender 模型命名。"
+    "你正在为游戏资产生成英文命名片段，用于unity游戏资产模型命名。"
     "请把输入转换成符合游戏开发习惯的简洁英文，不要直译成长词。"
     "要求："
     "1. 只返回结果，不要解释；"
@@ -42,9 +42,14 @@ GENERIC_MODEL_TRANSLATE_PROMPT = (
     "5. 保持简洁准确，避免冗长描述。"
 )
 RETEX_AI_TRANSLATE_PROMPT = (
-    "我现在需要为unity游戏角色动作进行英文命名,我输入中文,你回复我英文结果,"
-    "请确保英文结果简洁准确干练,不要有太多的字数,尽量使用单个单词概括."
-    "结果不包含任何符号(包括_)和空格,首字母使用小写,后续驼峰可以大写开头"
+    "你正在为游戏资产生成英文命名片段，用于unity游戏资产模型命名。"
+    "请把输入转换成符合游戏开发习惯的简洁英文，不要直译成长词。"
+    "要求："
+    "1. 只返回结果，不要解释；"
+    "2. 优先使用游戏行业常见简称和习惯叫法，例如 金币 -> coin，不要输出 goldcoin；"
+    "3. 结果不要包含下划线、空格、连字符或其他符号；"
+    "4. 多词请直接使用 lowerCamelCase；"
+    "5. 保持简洁准确，避免冗长描述。"
 )
 RETEX_TRANSLATE_JOB_KEY = "retex_ai_translate"
 
@@ -432,7 +437,7 @@ def draw_texture_manager_ui(layout, context, show_help_section=True, show_extend
         if props_main.show_generic_model_rename_box:
             tip_box = generic_box.box()
             tip_box.label(text="命名规则: mesh_活动类型_模型名称XX", icon='INFO')
-            tip_box.label(text="段内不加下划线，中文会自动调用豆包AI按游戏命名习惯翻译")
+            tip_box.label(text="段内不加下划线，中文会自动调用所选AI按游戏命名习惯翻译")
             tip_box.label(text="编号从01开始自动递增，并跳过场景内重名资产")
 
             row = generic_box.row(align=True)
@@ -2177,7 +2182,7 @@ class RT_OT_AITranslateText(Operator):
     """AI翻译文本操作符 / AI Translate Text Operator"""
     bl_idname = "rt.ai_translate_text"
     bl_label = "AI翻译"
-    bl_description = "使用Doubao AI翻译输入的文本"
+    bl_description = "使用所选AI模型翻译输入的文本"
     bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):

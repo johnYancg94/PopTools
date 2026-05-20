@@ -19,7 +19,10 @@ import time
 import glob
 
 import bpy
+import blf
+from bpy_extras import view3d_utils
 from bpy.types import Operator, Panel
+from mathutils import Vector
 
 from .utils import get_addon_preferences
 from .translation_tools import (
@@ -28,14 +31,18 @@ from .translation_tools import (
     get_ai_translate_job,
     start_ai_translate_job,
 )
+from .font_utils import get_mikado_black_font_id
 
 
 LOW_SUFFIX = "_low"
 HIGH_SUFFIX = "_high"
 ACTIVE_BAKE_JOB = None
+POLYCOUNT_OVERLAY_HANDLER = None
+POLYCOUNT_OVERLAY_OBJECT_NAMES = []
+POLYCOUNT_OVERLAY_COUNTS = {}
 MARMORSET_MODEL_TRANSLATE_JOB_KEY = "marmoset_model_name"
 MARMORSET_MODEL_TRANSLATE_PROMPT = (
-    "你正在为游戏资产生成英文模型名称，用于 Blender 模型和贴图命名。"
+    "你正在为游戏资产生成英文命名片段，用于unity游戏资产模型命名。"
     "请把输入转换成符合游戏开发习惯的简洁英文，不要直译成长词。"
     "要求："
     "1. 只返回结果，不要解释；"
@@ -83,6 +90,141 @@ def poll_marmoset_model_name_translation():
         for area in screen.areas:
             area.tag_redraw()
     return None
+
+
+def tag_view3d_redraw():
+    screen = bpy.context.screen
+    if not screen:
+        return
+    for area in screen.areas:
+        if area.type == "VIEW_3D":
+            area.tag_redraw()
+
+
+def count_mesh_faces_and_tris(obj, depsgraph=None):
+    mesh = obj.data
+    evaluated_obj = None
+    if depsgraph:
+        try:
+            evaluated_obj = obj.evaluated_get(depsgraph)
+            mesh = evaluated_obj.to_mesh()
+        except Exception:
+            mesh = obj.data
+            evaluated_obj = None
+
+    face_count = len(mesh.polygons)
+    tri_count = sum(max(1, len(poly.vertices) - 2) for poly in mesh.polygons)
+    if evaluated_obj:
+        evaluated_obj.to_mesh_clear()
+    return face_count, tri_count
+
+
+def polycount_color(tri_count):
+    if tri_count < 5000:
+        return (0.18, 0.9, 0.32, 1.0)
+    if tri_count <= 12000:
+        return (0.2, 0.55, 1.0, 1.0)
+    if tri_count <= 25000:
+        return (1.0, 0.86, 0.12, 1.0)
+    if tri_count <= 45000:
+        return (1.0, 0.48, 0.08, 1.0)
+    return (1.0, 0.18, 0.12, 1.0)
+
+
+def object_label_world_position(obj):
+    world_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+    if not world_corners:
+        return obj.location
+
+    center_x = sum(corner.x for corner in world_corners) / len(world_corners)
+    center_y = sum(corner.y for corner in world_corners) / len(world_corners)
+    top_z = max(corner.z for corner in world_corners)
+    height = max(corner.z for corner in world_corners) - min(corner.z for corner in world_corners)
+    return Vector((center_x, center_y, top_z + max(height * 0.08, 0.08)))
+
+
+def draw_text_segment(font_id, x, y, text, color):
+    blf.position(font_id, x, y, 0)
+    blf.color(font_id, *color)
+    blf.draw(font_id, text)
+
+
+def draw_outlined_text_segment(font_id, x, y, text, color):
+    outline_color = (1.0, 1.0, 1.0, 1.0)
+    outline_offsets = [
+        (-2, -2), (-2, 0), (-2, 2),
+        (0, -2), (0, 2),
+        (2, -2), (2, 0), (2, 2),
+    ]
+    for offset_x, offset_y in outline_offsets:
+        draw_text_segment(font_id, x + offset_x, y + offset_y, text, outline_color)
+    draw_text_segment(font_id, x, y, text, color)
+
+
+def draw_polycount_text(x, y, tri_count, color):
+    font_id = get_mikado_black_font_id()
+    font_size = 44
+    try:
+        blf.size(font_id, font_size)
+    except TypeError:
+        blf.size(font_id, font_size, 72)
+
+    label = "Tris: "
+    value = f"{tri_count:,}"
+    draw_text_segment(font_id, x, y, label, color)
+    label_width = blf.dimensions(font_id, label)[0]
+    draw_outlined_text_segment(font_id, x + label_width, y, value, color)
+
+
+def draw_polycount_overlay():
+    context = bpy.context
+    region = context.region
+    region_data = context.region_data
+    if not region or not region_data:
+        return
+
+    for obj_name in list(POLYCOUNT_OVERLAY_OBJECT_NAMES):
+        obj = bpy.data.objects.get(obj_name)
+        if not obj or obj.type != "MESH":
+            continue
+
+        screen_pos = view3d_utils.location_3d_to_region_2d(
+            region,
+            region_data,
+            object_label_world_position(obj),
+        )
+        if not screen_pos:
+            continue
+
+        face_count, tri_count = POLYCOUNT_OVERLAY_COUNTS.get(obj_name) or count_mesh_faces_and_tris(obj)
+        draw_polycount_text(
+            screen_pos.x,
+            screen_pos.y,
+            tri_count,
+            polycount_color(tri_count),
+        )
+
+
+def ensure_polycount_overlay():
+    global POLYCOUNT_OVERLAY_HANDLER
+    if POLYCOUNT_OVERLAY_HANDLER is None:
+        POLYCOUNT_OVERLAY_HANDLER = bpy.types.SpaceView3D.draw_handler_add(
+            draw_polycount_overlay,
+            (),
+            "WINDOW",
+            "POST_PIXEL",
+        )
+    tag_view3d_redraw()
+
+
+def clear_polycount_overlay():
+    global POLYCOUNT_OVERLAY_HANDLER
+    POLYCOUNT_OVERLAY_OBJECT_NAMES.clear()
+    POLYCOUNT_OVERLAY_COUNTS.clear()
+    if POLYCOUNT_OVERLAY_HANDLER is not None:
+        bpy.types.SpaceView3D.draw_handler_remove(POLYCOUNT_OVERLAY_HANDLER, "WINDOW")
+        POLYCOUNT_OVERLAY_HANDLER = None
+    tag_view3d_redraw()
 
 MAP_DEFINITIONS = {
     "normal": {
@@ -2243,6 +2385,53 @@ class POPTOOLS_OT_marmoset_generate_lowpoly(Operator):
         return {"FINISHED"}
 
 
+class POPTOOLS_OT_marmoset_show_selected_polycount(Operator):
+    """在3D视图显示选中模型面数"""
+    bl_idname = "poptools.marmoset_show_selected_polycount"
+    bl_label = "查看选中模型面数"
+    bl_options = {"REGISTER"}
+
+    @classmethod
+    def poll(cls, context):
+        return any(obj.type == "MESH" for obj in context.selected_objects)
+
+    def execute(self, context):
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if not selected_meshes:
+            self.report({"ERROR"}, "请先选择至少一个网格模型")
+            return {"CANCELLED"}
+
+        POLYCOUNT_OVERLAY_OBJECT_NAMES.clear()
+        POLYCOUNT_OVERLAY_OBJECT_NAMES.extend(obj.name for obj in selected_meshes)
+        POLYCOUNT_OVERLAY_COUNTS.clear()
+        depsgraph = context.evaluated_depsgraph_get()
+        for obj in selected_meshes:
+            POLYCOUNT_OVERLAY_COUNTS[obj.name] = count_mesh_faces_and_tris(obj, depsgraph)
+        ensure_polycount_overlay()
+
+        total_faces = 0
+        total_tris = 0
+        for obj in selected_meshes:
+            face_count, tri_count = POLYCOUNT_OVERLAY_COUNTS[obj.name]
+            total_faces += face_count
+            total_tris += tri_count
+
+        self.report({"INFO"}, f"已显示 {len(selected_meshes)} 个模型，Faces:{total_faces:,} Tris:{total_tris:,}")
+        return {"FINISHED"}
+
+
+class POPTOOLS_OT_marmoset_clear_polycount_overlay(Operator):
+    """清除3D视图中的模型面数显示"""
+    bl_idname = "poptools.marmoset_clear_polycount_overlay"
+    bl_label = "清除显示"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        clear_polycount_overlay()
+        self.report({"INFO"}, "已清除模型面数显示")
+        return {"FINISHED"}
+
+
 class POPTOOLS_OT_marmoset_ai_translate_model_name(Operator):
     """将模型名称输入框内容进行AI翻译"""
     bl_idname = "poptools.marmoset_ai_translate_model_name"
@@ -2692,6 +2881,10 @@ class POPTOOLS_PT_marmoset_baker(Panel):
         lowpoly_button = lowpoly_box.row()
         lowpoly_button.scale_y = 1.2
         lowpoly_button.operator("poptools.marmoset_generate_lowpoly", icon="MOD_DECIM")
+        polycount_row = lowpoly_box.row(align=True)
+        polycount_row.scale_y = 1.1
+        polycount_row.operator("poptools.marmoset_show_selected_polycount", icon="MESH_DATA")
+        polycount_row.operator("poptools.marmoset_clear_polycount_overlay", text="清除显示", icon="X")
 
         layout.separator()
         layout.label(text="八猴烘焙设置", icon="MESH_MONKEY")
@@ -2749,6 +2942,8 @@ classes = (
     POPTOOLS_OT_marmoset_mark_high,
     POPTOOLS_OT_marmoset_auto_mark_high_low,
     POPTOOLS_OT_marmoset_generate_lowpoly,
+    POPTOOLS_OT_marmoset_show_selected_polycount,
+    POPTOOLS_OT_marmoset_clear_polycount_overlay,
     POPTOOLS_OT_marmoset_ai_translate_model_name,
     POPTOOLS_OT_marmoset_clear_model_name,
     POPTOOLS_OT_marmoset_auto_detect_toolbag,
@@ -2770,5 +2965,6 @@ def register():
 
 
 def unregister():
+    clear_polycount_overlay()
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

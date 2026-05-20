@@ -8,7 +8,7 @@ from bpy.props import PointerProperty
 bl_info = {
     "name": "PopTools",
     "author": "jhonyan & Claude",
-    "version": (4, 1, 0),
+    "version": (4, 2, 0),
     "blender": (4, 5, 0),
     "location": "View3D > Sidebar > PopTools",
     "description": " 蜂鸟三消项目专用Blender工具箱 ",
@@ -33,6 +33,7 @@ module_names = (
     "translation_tools",
     "action_naming_tools",
     "transform_axis_overlay",
+    "font_utils",
 )
 
 # 存储已导入的模块 / Store imported modules

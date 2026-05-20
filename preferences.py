@@ -57,6 +57,7 @@ class POPTOOLS_OT_unlock_api_keys(Operator):
             secret_id = prefs.get_decrypted_secret_id()
             secret_key = prefs.get_decrypted_secret_key()
             doubao_api_key = prefs.get_decrypted_doubao_api_key()
+            deepseek_api_key = prefs.get_decrypted_deepseek_api_key()
             
             success_count = 0
             if secret_id and secret_key:
@@ -66,9 +67,13 @@ class POPTOOLS_OT_unlock_api_keys(Operator):
             if doubao_api_key:
                 success_count += 1
                 print(f"[解锁成功] Doubao API Key: {doubao_api_key[:8]}...")
+
+            if deepseek_api_key:
+                success_count += 1
+                print(f"[解锁成功] DeepSeek API Key: {deepseek_api_key[:8]}...")
             
             if success_count > 0:
-                if success_count == 2:
+                if success_count == 3:
                     self.report({'INFO'}, "所有API密钥解锁成功并已自动填入")
                 else:
                     self.report({'INFO'}, "部分API密钥解锁成功并已自动填入")
@@ -180,7 +185,7 @@ class POPTOOLS_OT_install_openai_sdk(Operator):
     """安装OpenAI SDK"""
     bl_idname = "poptools.install_openai_sdk"
     bl_label = "安装OpenAI SDK"
-    bl_description = "自动安装OpenAI Python SDK（用于Doubao AI翻译）"
+    bl_description = "自动安装OpenAI Python SDK（用于豆包/DeepSeek AI翻译）"
     bl_options = {'REGISTER'}
     
     def execute(self, context):
@@ -425,6 +430,25 @@ class PopToolsPreferences(AddonPreferences):
         manual_key = self.doubao_api_key
         print(f"[调试] 使用手动配置的Doubao API Key: '{manual_key}'")
         return manual_key
+
+    def get_decrypted_deepseek_api_key(self):
+        """获取解密后的DeepSeek API Key"""
+        from .encryption_utils import get_decrypted_api_key
+        if self.api_password:
+            decrypted = get_decrypted_api_key("deepseek_api_key", self.api_password)
+            masked_key = f"{decrypted[:8]}..." if decrypted else "None"
+            print(f"[调试] 解密DeepSeek API Key: 解密结果='{masked_key}'")
+            if decrypted:
+                # 解密成功，自动填入手动配置字段
+                if self.deepseek_api_key != decrypted:
+                    self.deepseek_api_key = decrypted
+                    print("[调试] 自动更新手动配置的DeepSeek API Key")
+                return decrypted
+        # 如果解密失败，尝试返回手动配置的密钥
+        manual_key = self.deepseek_api_key
+        masked_key = f"{manual_key[:8]}..." if manual_key else "None"
+        print(f"[调试] 使用手动配置的DeepSeek API Key: '{masked_key}'")
+        return manual_key
     
     tencent_region: EnumProperty(
         name="腾讯云地域",
@@ -449,10 +473,27 @@ class PopToolsPreferences(AddonPreferences):
         default=False
     )
     
-    # Doubao AI翻译配置
+    # AI翻译配置
     doubao_api_key: StringProperty(
         name="Doubao API Key",
         description="Doubao AI翻译API密钥（ARK_API_KEY）",
+        default="",
+        subtype='PASSWORD'
+    )
+
+    ai_translation_provider: EnumProperty(
+        name="AI翻译模型",
+        description="选择AI翻译调用的模型供应商",
+        items=[
+            ('DOUBAO', '豆包', '使用豆包ARK API进行AI翻译'),
+            ('DEEPSEEK', 'DeepSeek', '使用DeepSeek API进行AI翻译'),
+        ],
+        default='DEEPSEEK'
+    )
+
+    deepseek_api_key: StringProperty(
+        name="DeepSeek API Key",
+        description="DeepSeek AI翻译API密钥（DEEPSEEK_API_KEY）",
         default="",
         subtype='PASSWORD'
     )
@@ -503,6 +544,7 @@ class PopToolsPreferences(AddonPreferences):
                     secret_id = get_decrypted_api_key("tencent_secret_id", self.api_password)
                     secret_key = get_decrypted_api_key("tencent_secret_key", self.api_password)
                     doubao_api_key = get_decrypted_api_key("doubao_api_key", self.api_password)
+                    deepseek_api_key = get_decrypted_api_key("deepseek_api_key", self.api_password)
                     
                     # 统计解锁成功的密钥数量
                     success_count = 0
@@ -510,10 +552,12 @@ class PopToolsPreferences(AddonPreferences):
                         success_count += 1
                     if doubao_api_key:
                         success_count += 1
+                    if deepseek_api_key:
+                        success_count += 1
                     
                     if success_count > 0:
                         row = col.row()
-                        if success_count == 2:
+                        if success_count == 3:
                             row.label(text="✓ 所有API密钥解锁成功,请记得保存首选项", icon='CHECKMARK')
                         else:
                             row.label(text="✓ 部分API密钥解锁成功,请记得保存首选项", icon='CHECKMARK')
@@ -530,6 +574,10 @@ class PopToolsPreferences(AddonPreferences):
                             status_col.label(text="• Doubao AI API: ✓ 已解锁")
                         else:
                             status_col.label(text="• Doubao AI API: ✗ 未解锁")
+                        if deepseek_api_key:
+                            status_col.label(text="• DeepSeek AI API: ✓ 已解锁")
+                        else:
+                            status_col.label(text="• DeepSeek AI API: ✗ 未解锁")
                     else:
                         row = col.row()
                         row.alert = True
@@ -559,11 +607,17 @@ class PopToolsPreferences(AddonPreferences):
                 tencent_col.prop(self, "tencent_secret_id")
                 tencent_col.prop(self, "tencent_secret_key")
                 
-                # Doubao AI API配置
+                # AI API配置
                 doubao_box = manual_col.box()
                 doubao_col = doubao_box.column()
                 doubao_col.label(text="Doubao AI翻译API:", icon='OUTLINER_OB_LIGHT')
                 doubao_col.prop(self, "doubao_api_key")
+
+                deepseek_box = manual_col.box()
+                deepseek_col = deepseek_box.column()
+                deepseek_col.label(text="DeepSeek AI翻译API:", icon='OUTLINER_OB_LIGHT')
+                deepseek_col.prop(self, "deepseek_api_key")
+                deepseek_col.label(text="调用模型: deepseek-v4-flash")
                 
                 # 地域设置
                 col.separator()
@@ -606,10 +660,10 @@ class PopToolsPreferences(AddonPreferences):
                 row = col.row()
                 row.label(text="或手动运行: pip install tencentcloud-sdk-python")
             
-            # Doubao AI翻译配置
+            # AI翻译配置
             col.separator()
             ai_box = box.box()
-            ai_box.label(text="Doubao AI翻译配置:", icon='OUTLINER_OB_LIGHT')
+            ai_box.label(text="AI翻译配置:", icon='OUTLINER_OB_LIGHT')
             
             # OpenAI SDK状态检查
             try:
@@ -625,15 +679,21 @@ class PopToolsPreferences(AddonPreferences):
                 
                 # API密钥配置
                 ai_col.separator()
-                ai_col.label(text="Doubao API密钥配置:", icon='KEY_HLT')
-                ai_col.prop(self, "doubao_api_key")
+                ai_col.label(text="AI模型选择:", icon='KEY_HLT')
+                ai_col.prop(self, "ai_translation_provider")
+
+                if self.ai_translation_provider == 'DEEPSEEK':
+                    ai_col.prop(self, "deepseek_api_key")
+                    ai_col.label(text="调用模型: deepseek-v4-flash")
+                else:
+                    ai_col.prop(self, "doubao_api_key")
                 
                 # 配置说明
                 help_box = ai_col.box()
                 help_col = help_box.column(align=True)
                 help_col.label(text="配置说明:", icon='INFO')
-                help_col.label(text="• 请在豆包官网申请API密钥")
-                help_col.label(text="• 或设置环境变量 ARK_API_KEY")
+                help_col.label(text="• 豆包可使用插件配置或环境变量 ARK_API_KEY")
+                help_col.label(text="• DeepSeek可使用插件配置或环境变量 DEEPSEEK_API_KEY")
                 help_col.label(text="• AI翻译专为游戏角色动作命名优化")
                 
             elif self.openai_sdk_install_success:
