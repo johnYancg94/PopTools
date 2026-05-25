@@ -698,7 +698,8 @@ class MarmosetBakerSettings(bpy.types.PropertyGroup):
         description="选择高低模烘焙配对方式",
         items=[
             ("ONE_TO_ONE", "一对一烘焙", "每组_high只烘焙到同名_low，并输出对应的一组贴图"),
-            ("MANY_TO_ONE", "多对一烘焙", "多个高模共同烘焙到一套低模UV和一套材质贴图"),
+            ("MANY_TO_MANY", "多对多烘焙", "多组同名_high/_low共同烘焙到一套低模UV和一套材质贴图"),
+            ("MANY_TO_ONE", "多对一烘焙", "多个高模合并后共同烘焙到一套低模UV和一套材质贴图"),
         ],
         default="ONE_TO_ONE"
     )

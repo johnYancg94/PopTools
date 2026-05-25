@@ -32,6 +32,7 @@ from .translation_tools import (
     start_ai_translate_job,
 )
 from .font_utils import get_mikado_black_font_id
+from . import texture_resource_utils as texture_utils
 
 
 LOW_SUFFIX = "_low"
@@ -366,7 +367,7 @@ def infer_one_to_one_pairs(objects, prefix=""):
     return pairs, leftovers
 
 
-def infer_many_to_one_group(objects, prefix=""):
+def infer_many_to_many_group(objects, prefix=""):
     objects = [obj for obj in objects if obj.type == "MESH"]
     if len(objects) < 2:
         return None, list(objects)
@@ -421,6 +422,32 @@ def infer_many_to_one_group(objects, prefix=""):
         "lows": lows,
         "highs": highs,
         "pairs": pairs,
+        "reference_high": reference_high,
+    }, []
+
+
+def infer_many_to_one_group(objects, prefix=""):
+    objects = [obj for obj in objects if obj.type == "MESH"]
+    if len(objects) < 2:
+        return None, list(objects)
+
+    tagged_lows, tagged_highs, untagged = split_high_low(objects)
+    if untagged:
+        return None, untagged
+    if not tagged_lows or not tagged_highs:
+        return None, objects
+
+    lows = list(tagged_lows)
+    highs = list(tagged_highs)
+    reference_high = max(highs, key=lambda obj: mesh_complexity(obj))
+    fallback_name = tagged_lows[0].name if len(tagged_lows) == 1 else reference_high.name
+    base_name = normalize_identifier(prefix or clean_base_name(fallback_name))
+
+    return {
+        "base_name": base_name,
+        "lows": lows,
+        "highs": highs,
+        "pairs": [],
         "reference_high": reference_high,
     }, []
 
@@ -610,21 +637,46 @@ def insert_base_color_adjustments(objects):
     return changed
 
 
+def iter_node_tree_image_users(node_tree, owner_label, node_types):
+    if not node_tree:
+        return
+    for node in getattr(node_tree, "nodes", []):
+        if node.type in node_types and getattr(node, "image", None):
+            yield owner_label, node, node.image
+
+
 def iter_texture_image_users():
+    shader_image_nodes = {"TEX_IMAGE", "TEX_ENVIRONMENT"}
     for obj in bpy.data.objects:
         if obj.type != "MESH":
             continue
         for slot in getattr(obj, "material_slots", []):
             material = slot.material
-            if not material or not material.use_nodes or not material.node_tree:
+            node_tree = getattr(material, "node_tree", None)
+            if not material or not getattr(material, "use_nodes", False) or not node_tree:
                 continue
-            for node in material.node_tree.nodes:
-                if node.type == "TEX_IMAGE" and node.image:
-                    yield obj, material, node, node.image
+            owner_label = f"{obj.name}/{material.name}"
+            yield from iter_node_tree_image_users(node_tree, owner_label, shader_image_nodes)
+
+    for world in bpy.data.worlds:
+        node_tree = getattr(world, "node_tree", None)
+        if not world or not getattr(world, "use_nodes", False) or not node_tree:
+            continue
+        yield from iter_node_tree_image_users(node_tree, f"World/{world.name}", shader_image_nodes)
+
+    for scene in bpy.data.scenes:
+        node_tree = getattr(scene, "node_tree", None)
+        if not scene or not getattr(scene, "use_nodes", False) or not node_tree:
+            continue
+        yield from iter_node_tree_image_users(node_tree, f"Scene/{scene.name}/Compositor", {"IMAGE"})
 
 
 def image_is_packed(image):
     return bool(getattr(image, "packed_file", None) or getattr(image, "packed_files", None))
+
+
+def image_is_regular_file(image):
+    return getattr(image, "source", "FILE") == "FILE"
 
 
 def image_source_path(image):
@@ -638,8 +690,8 @@ def texture_search_roots(original_path="", work_dir=""):
     roots = []
     blend_dir = bpy.path.abspath("//")
     if blend_dir and os.path.isdir(blend_dir):
-        roots.append(blend_dir)
         roots.append(os.path.join(blend_dir, "textures"))
+        roots.append(blend_dir)
     if work_dir and os.path.isdir(work_dir):
         roots.append(os.path.join(work_dir, "textures"))
 
@@ -656,29 +708,49 @@ def texture_search_roots(original_path="", work_dir=""):
 
 def find_texture_candidate(image, original_path, work_dir=""):
     expected_name = os.path.basename(original_path) if original_path else ""
-    image_stem = os.path.splitext(os.path.basename(expected_name or image.name))[0].lower()
-    image_extensions = {".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".exr", ".psd", ".bmp"}
-    candidates = []
+    roots = texture_search_roots(original_path, work_dir)
 
-    for root in texture_search_roots(original_path, work_dir):
-        if expected_name:
+    if expected_name:
+        exact_candidates = []
+        expected_lower = expected_name.lower()
+        for root in roots:
             direct = os.path.join(root, expected_name)
             if os.path.isfile(direct):
-                return direct
-        for current_root, _dirs, files in os.walk(root):
+                exact_candidates.append(direct)
+            for current_root, dirs, files in os.walk(root):
+                dirs.sort()
+                files.sort()
+                for filename in files:
+                    extension = os.path.splitext(filename)[1].lower()
+                    if extension not in texture_utils.IMAGE_EXTENSIONS:
+                        continue
+                    if filename.lower() == expected_lower:
+                        exact_candidates.append(os.path.join(current_root, filename))
+        if exact_candidates:
+            return texture_utils.select_best_texture_candidate(
+                exact_candidates,
+                expected_name=expected_name,
+                image_name=getattr(image, "name", ""),
+                preferred_roots=roots,
+            )
+
+    candidates = []
+    for root in roots:
+        for current_root, dirs, files in os.walk(root):
+            dirs.sort()
+            files.sort()
             for filename in files:
                 extension = os.path.splitext(filename)[1].lower()
-                if extension not in image_extensions:
+                if extension not in texture_utils.IMAGE_EXTENSIONS:
                     continue
-                file_stem = os.path.splitext(filename)[0].lower()
-                path = os.path.join(current_root, filename)
-                if expected_name and filename.lower() == expected_name.lower():
-                    return path
-                if image_stem and file_stem == image_stem:
-                    candidates.append(path)
-        if candidates:
-            return candidates[0]
-    return ""
+                candidates.append(os.path.join(current_root, filename))
+
+    return texture_utils.select_best_texture_candidate(
+        candidates,
+        expected_name=expected_name,
+        image_name=getattr(image, "name", ""),
+        preferred_roots=roots,
+    )
 
 
 def normalized_search_tokens(*values):
@@ -734,7 +806,7 @@ def score_texture_candidate(path, expected_names, tokens, kind_tokens):
     return score
 
 
-def find_texture_candidate_smart(obj, material, node, image, original_path, work_dir=""):
+def find_texture_candidate_smart(owner_label, node, image, original_path, work_dir=""):
     expected_names = [
         os.path.basename(original_path) if original_path else "",
         getattr(image, "name", ""),
@@ -746,40 +818,33 @@ def find_texture_candidate_smart(obj, material, node, image, original_path, work
         image.name,
         node.name,
         node.label,
-        material.name if material else "",
-        obj.name if obj else "",
+        owner_label,
     )
     kind_tokens = texture_kind_tokens(node)
-    image_extensions = {".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".exr", ".psd", ".bmp"}
-    best = ("", 0)
+    scored_candidates = []
+    roots = texture_search_roots(original_path, work_dir)
 
-    for root in texture_search_roots(original_path, work_dir):
-        for current_root, _dirs, files in os.walk(root):
+    for root in roots:
+        for current_root, dirs, files in os.walk(root):
+            dirs.sort()
+            files.sort()
             for filename in files:
                 extension = os.path.splitext(filename)[1].lower()
-                if extension not in image_extensions:
+                if extension not in texture_utils.IMAGE_EXTENSIONS:
                     continue
                 path = os.path.join(current_root, filename)
                 score = score_texture_candidate(path, expected_names, tokens, kind_tokens)
-                if score > best[1]:
-                    best = (path, score)
+                scored_candidates.append((path, score))
 
-    return best[0] if best[1] >= 20 else ""
+    return texture_utils.select_best_scored_texture_candidate(
+        scored_candidates,
+        preferred_roots=roots,
+        min_score=20,
+    )
 
 
 def unique_texture_target_path(texture_dir, source_path):
-    base_name = normalize_identifier(os.path.splitext(os.path.basename(source_path))[0])
-    extension = os.path.splitext(source_path)[1] or ".png"
-    target_path = os.path.join(texture_dir, f"{base_name}{extension}")
-    if not os.path.exists(target_path) or os.path.abspath(source_path) == os.path.abspath(target_path):
-        return target_path
-
-    index = 1
-    while True:
-        candidate = os.path.join(texture_dir, f"{base_name}_{index:02d}{extension}")
-        if not os.path.exists(candidate):
-            return candidate
-        index += 1
+    return texture_utils.unique_texture_target_path(texture_dir, source_path)
 
 
 def secure_project_textures(context):
@@ -795,12 +860,13 @@ def secure_project_textures(context):
         "copied": 0,
         "relinked": 0,
         "already_safe": 0,
+        "skipped": 0,
         "missing": [],
         "errors": [],
     }
     processed_images = {}
 
-    for obj, material, node, image in iter_texture_image_users():
+    for owner_label, node, image in iter_texture_image_users():
         stats["total_nodes"] += 1
         image_key = image.as_pointer()
         if image_key in processed_images:
@@ -810,16 +876,20 @@ def secure_project_textures(context):
         if image_is_packed(image):
             stats["packed"] += 1
             continue
+        if not image_is_regular_file(image):
+            stats["skipped"] += 1
+            continue
 
         original_path = image_source_path(image)
         source_path = original_path if original_path and os.path.isfile(original_path) else ""
+        was_relinked = False
         if not source_path:
             source_path = find_texture_candidate(image, original_path, work_dir)
             if source_path:
-                stats["relinked"] += 1
+                was_relinked = True
 
         if not source_path or not os.path.isfile(source_path):
-            stats["missing"].append(f"{image.name} ({obj.name}/{material.name})")
+            stats["missing"].append(f"{image.name} ({owner_label})")
             continue
 
         try:
@@ -832,8 +902,10 @@ def secure_project_textures(context):
             image.filepath = bpy.path.relpath(target_path)
             try:
                 image.reload()
-            except Exception:
-                pass
+            except Exception as reload_exc:
+                stats["errors"].append(f"{image.name}: reload failed after relink: {reload_exc}")
+            if was_relinked:
+                stats["relinked"] += 1
         except Exception as exc:
             stats["errors"].append(f"{image.name}: {exc}")
 
@@ -850,12 +922,13 @@ def smart_find_missing_textures(context):
         "total_nodes": 0,
         "missing_nodes": 0,
         "relinked": 0,
+        "skipped": 0,
         "still_missing": [],
         "errors": [],
     }
     processed_images = {}
 
-    for obj, material, node, image in iter_texture_image_users():
+    for owner_label, node, image in iter_texture_image_users():
         stats["total_nodes"] += 1
         image_key = image.as_pointer()
         if image_key in processed_images:
@@ -864,24 +937,30 @@ def smart_find_missing_textures(context):
 
         if image_is_packed(image):
             continue
+        if not image_is_regular_file(image):
+            stats["skipped"] += 1
+            continue
 
         original_path = image_source_path(image)
         if original_path and os.path.isfile(original_path):
             continue
 
         stats["missing_nodes"] += 1
-        candidate = find_texture_candidate_smart(obj, material, node, image, original_path, work_dir)
+        candidate = find_texture_candidate_smart(owner_label, node, image, original_path, work_dir)
         if not candidate:
             candidate = find_texture_candidate(image, original_path, work_dir)
 
         if not candidate or not os.path.isfile(candidate):
-            stats["still_missing"].append(f"{image.name} ({obj.name}/{material.name})")
+            stats["still_missing"].append(f"{image.name} ({owner_label})")
             continue
 
         try:
             image.filepath = bpy.path.relpath(candidate)
-            image.reload()
             stats["relinked"] += 1
+            try:
+                image.reload()
+            except Exception as reload_exc:
+                stats["errors"].append(f"{image.name}: reload failed after relink: {reload_exc}")
         except Exception as exc:
             stats["errors"].append(f"{image.name}: {exc}")
 
@@ -1183,19 +1262,82 @@ def restore_prepared_images(prepared_images):
             pass
 
 
-def export_bake_fbx(context, objects, fbx_path, high_objects=None, include_material_textures=False, flatten_hierarchy=False):
+def export_bake_fbx(
+    context,
+    objects,
+    fbx_path,
+    high_objects=None,
+    include_material_textures=False,
+    flatten_hierarchy=False,
+    merge_highs_name="",
+):
     previous_active = context.view_layer.objects.active
     previous_selected = [obj for obj in context.scene.objects if obj.select_get()]
     prepared_images = []
     albedo_assignments = []
     original_parents = []
+    original_names = []
+    temp_export_objects = []
 
     try:
         if include_material_textures and high_objects:
             texture_dir = os.path.join(os.path.dirname(fbx_path), "source_textures")
             prepared_images, albedo_assignments = prepare_high_material_textures(high_objects, texture_dir)
 
-        if flatten_hierarchy:
+        if merge_highs_name:
+            high_ids = {obj.as_pointer() for obj in high_objects or []}
+            lows = [obj for obj in objects if obj.as_pointer() not in high_ids]
+            depsgraph = context.evaluated_depsgraph_get()
+
+            def make_merged_export_object(source_objects, object_name):
+                merge_parts = []
+                for source_obj in source_objects:
+                    evaluated_obj = source_obj.evaluated_get(depsgraph)
+                    mesh = bpy.data.meshes.new_from_object(
+                        evaluated_obj,
+                        depsgraph=depsgraph,
+                        preserve_all_data_layers=True,
+                    )
+                    temp_obj = bpy.data.objects.new(f"{object_name}_part", mesh)
+                    temp_obj.matrix_world = source_obj.matrix_world.copy()
+                    if not temp_obj.data.materials:
+                        for material in getattr(source_obj.data, "materials", []):
+                            temp_obj.data.materials.append(material)
+                    context.collection.objects.link(temp_obj)
+                    merge_parts.append(temp_obj)
+
+                if not merge_parts:
+                    return None
+                if context.mode != "OBJECT":
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                for obj in context.scene.objects:
+                    obj.select_set(False)
+                for obj in merge_parts:
+                    obj.select_set(True)
+                context.view_layer.objects.active = merge_parts[0]
+                if len(merge_parts) > 1:
+                    bpy.ops.object.join()
+                merged_obj = context.view_layer.objects.active
+                merged_obj.name = object_name
+                rename_mesh_data(merged_obj)
+                return merged_obj
+
+            merged_high = make_merged_export_object(high_objects or [], f"{merge_highs_name}{HIGH_SUFFIX}")
+            temp_export_objects = [obj for obj in [merged_high] if obj]
+
+            if len(lows) == 1:
+                original_names.append((lows[0], lows[0].name, getattr(lows[0].data, "name", "")))
+                lows[0].name = f"{merge_highs_name}{LOW_SUFFIX}"
+                rename_mesh_data(lows[0])
+                export_lows = lows
+            else:
+                merged_low = make_merged_export_object(lows, f"{merge_highs_name}{LOW_SUFFIX}")
+                export_lows = [merged_low] if merged_low else []
+                temp_export_objects.extend(export_lows)
+
+            objects = temp_export_objects[:1] + export_lows
+            high_objects = [merged_high] if merged_high else []
+        elif flatten_hierarchy:
             for obj in objects:
                 original_parents.append((obj, obj.parent, obj.matrix_parent_inverse.copy(), obj.matrix_world.copy()))
                 obj.parent = None
@@ -1228,6 +1370,16 @@ def export_bake_fbx(context, objects, fbx_path, high_objects=None, include_mater
             obj.parent = parent
             obj.matrix_parent_inverse = matrix_parent_inverse
             obj.matrix_world = matrix_world
+        for obj, name, data_name in original_names:
+            obj.name = name
+            if getattr(obj, "data", None):
+                obj.data.name = data_name
+        for obj in temp_export_objects:
+            if obj and obj.name in bpy.data.objects:
+                mesh = obj.data
+                bpy.data.objects.remove(obj, do_unlink=True)
+                if mesh and mesh.users == 0:
+                    bpy.data.meshes.remove(mesh)
 
         for obj in context.scene.objects:
             obj.select_set(False)
@@ -1255,6 +1407,9 @@ def prepare_single_bake_job(
     shared_output=False,
     reference_high=None,
     shared_material_name="",
+    merge_shared_highs=False,
+    allow_map_fallback_for_all=False,
+    map_lookup_name="",
 ):
     fbx_path = os.path.join(work_dir, f"{project_name}_bake.fbx")
     script_path = os.path.join(work_dir, f"{project_name}_marmoset_bake.py")
@@ -1275,6 +1430,7 @@ def prepare_single_bake_job(
             original_low_locations, moved_lows = align_objects_to_origin(lows, reference_high)
         cleared_low_materials = clear_low_materials_for_export(lows)
 
+        merge_highs_for_export = bool(shared_output and merge_shared_highs)
         export_objects = (list(highs) + list(lows)) if shared_output else (list(lows) + list(highs))
         high_albedo_textures = export_bake_fbx(
             context,
@@ -1282,7 +1438,8 @@ def prepare_single_bake_job(
             fbx_path,
             high_objects=highs,
             include_material_textures="albedo" in map_keys,
-            flatten_hierarchy=shared_output,
+            flatten_hierarchy=shared_output and not merge_highs_for_export,
+            merge_highs_name=project_name if merge_highs_for_export else "",
         )
     finally:
         restore_low_locations(original_low_locations)
@@ -1318,6 +1475,8 @@ def prepare_single_bake_job(
         "cleanup_when_done": bool(settings.close_toolbag_when_done),
         "shared_output": bool(shared_output),
         "shared_material_name": shared_material_name,
+        "allow_map_fallback_for_all": bool(allow_map_fallback_for_all),
+        "map_lookup_name": map_lookup_name or project_name,
         "fbx_path": fbx_path,
         "script_path": script_path,
         "status_path": status_path,
@@ -1909,6 +2068,7 @@ def find_map_file(output_dir, low_obj_name, map_key, allow_fallback=False):
     if not os.path.isdir(output_dir):
         return None
 
+    normalized_low_base = low_base.replace(" ", "_").replace("-", "_")
     for filename in os.listdir(output_dir):
         stem, extension = os.path.splitext(filename)
         if extension.lower() not in image_extensions:
@@ -1920,7 +2080,12 @@ def find_map_file(output_dir, low_obj_name, map_key, allow_fallback=False):
         if map_key == "normal" and ("bent" in normalized_stem or "object" in normalized_stem):
             continue
 
-        if low_base and low_base in normalized_stem:
+        if normalized_low_base and (
+            normalized_stem == normalized_low_base
+            or normalized_stem.startswith(normalized_low_base + "_")
+        ):
+            score = 20
+        elif normalized_low_base and normalized_low_base in normalized_stem:
             score = 10
         elif allow_fallback:
             score = 1
@@ -2019,7 +2184,14 @@ def apply_image_to_material(obj, map_key, image_path):
     return False
 
 
-def apply_maps_to_low_materials(lows, output_dir, map_keys, allow_fallback_for_all=False, shared_material_name=""):
+def apply_maps_to_low_materials(
+    lows,
+    output_dir,
+    map_keys,
+    allow_fallback_for_all=False,
+    shared_material_name="",
+    map_lookup_name="",
+):
     applied_count = 0
     missing = []
     allow_fallback = allow_fallback_for_all or len(lows) == 1
@@ -2030,10 +2202,11 @@ def apply_maps_to_low_materials(lows, output_dir, map_keys, allow_fallback_for_a
         target_lows = target_lows[:1]
 
     for low_obj in target_lows:
+        lookup_name = map_lookup_name or low_obj.name
         for map_key in map_keys:
-            image_path = find_map_file(output_dir, low_obj.name, map_key, allow_fallback)
+            image_path = find_map_file(output_dir, lookup_name, map_key, allow_fallback)
             if not image_path:
-                missing.append(f"{low_obj.name}:{map_key}")
+                missing.append(f"{lookup_name}:{map_key}")
                 continue
 
             if apply_image_to_material(low_obj, map_key, image_path):
@@ -2187,8 +2360,9 @@ def poll_active_bake_job():
                 job["lows"],
                 job["output_dir"],
                 job["map_keys"],
-                allow_fallback_for_all=job.get("shared_output", False),
+                allow_fallback_for_all=job.get("allow_map_fallback_for_all", False),
                 shared_material_name=job.get("shared_material_name", ""),
+                map_lookup_name=job.get("map_lookup_name", ""),
             )
         if missing:
             print("PopTools Marmoset Baker missing maps: " + ", ".join(missing))
@@ -2383,6 +2557,280 @@ class POPTOOLS_OT_marmoset_generate_lowpoly(Operator):
 
         self.report({"INFO"}, f"已生成 {len(generated_lows)} 个低模，减面比例 {ratio:g}")
         return {"FINISHED"}
+
+
+def mesh_has_boundary_edges(obj):
+    """Return True when the mesh has open boundary edges."""
+    mesh = obj.data
+    mesh.update(calc_edges=True)
+    edge_key_use_count = {tuple(sorted(edge.key)): 0 for edge in mesh.edges}
+    for polygon in mesh.polygons:
+        for edge_key in polygon.edge_keys:
+            edge_key_use_count[tuple(sorted(edge_key))] = edge_key_use_count.get(tuple(sorted(edge_key)), 0) + 1
+    return any(count == 1 for count in edge_key_use_count.values())
+
+
+def fill_boundary_holes(context, obj):
+    for selected in context.selected_objects:
+        selected.select_set(False)
+    obj.select_set(True)
+    context.view_layer.objects.active = obj
+    if context.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_mode(type="EDGE")
+    bpy.ops.mesh.select_all(action="DESELECT")
+    bpy.ops.mesh.select_non_manifold(
+        extend=False,
+        use_wire=False,
+        use_boundary=True,
+        use_multi_face=False,
+        use_non_contiguous=False,
+        use_verts=False,
+    )
+    bpy.ops.mesh.fill_holes(sides=0)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def run_voxel_remesh(context, obj, voxel_size=0.03):
+    for selected in context.selected_objects:
+        selected.select_set(False)
+    obj.select_set(True)
+    context.view_layer.objects.active = obj
+    if context.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    if hasattr(obj.data, "remesh_voxel_size"):
+        obj.data.remesh_voxel_size = voxel_size
+    if hasattr(obj.data, "remesh_voxel_adaptivity"):
+        obj.data.remesh_voxel_adaptivity = 0.0
+    if not hasattr(bpy.ops.object, "voxel_remesh"):
+        raise RuntimeError("当前Blender版本未找到 voxel_remesh 操作")
+    bpy.ops.object.voxel_remesh()
+
+
+def apply_project_shrinkwrap(context, low_obj, high_obj, name):
+    if context.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    for selected in context.selected_objects:
+        selected.select_set(False)
+    low_obj.select_set(True)
+    context.view_layer.objects.active = low_obj
+
+    shrinkwrap = low_obj.modifiers.new(name=name, type="SHRINKWRAP")
+    shrinkwrap.target = high_obj
+    shrinkwrap.wrap_method = "PROJECT"
+    shrinkwrap.use_project_x = True
+    shrinkwrap.use_project_y = True
+    shrinkwrap.use_project_z = True
+    shrinkwrap.use_negative_direction = True
+    shrinkwrap.use_positive_direction = True
+    bpy.ops.object.modifier_apply(modifier=shrinkwrap.name)
+
+
+def finish_zbrush_like_lowpoly_after_qremesh(context, low_obj, high_obj):
+    if context.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    if low_obj.name not in bpy.data.objects:
+        raise RuntimeError(f"低模对象已不存在: {low_obj.name}")
+    if high_obj.name not in bpy.data.objects:
+        raise RuntimeError(f"高模对象已不存在: {high_obj.name}")
+
+    for selected in context.selected_objects:
+        selected.select_set(False)
+    low_obj.select_set(True)
+    context.view_layer.objects.active = low_obj
+    if low_obj.data and low_obj.data.users > 1:
+        low_obj.data = low_obj.data.copy()
+        rename_mesh_data(low_obj)
+
+    apply_project_shrinkwrap(context, low_obj, high_obj, "ZLike Project Shrinkwrap")
+
+    subdivision = low_obj.modifiers.new(name="ZLike Divide", type="SUBSURF")
+    subdivision.levels = 1
+    subdivision.render_levels = 1
+    context.view_layer.objects.active = low_obj
+    bpy.ops.object.modifier_apply(modifier=subdivision.name)
+
+    apply_project_shrinkwrap(context, low_obj, high_obj, "ZLike Project Shrinkwrap 2")
+
+    decimate = low_obj.modifiers.new(name="ZLike Final Decimate", type="DECIMATE")
+    decimate.decimate_type = "COLLAPSE"
+    decimate.ratio = 0.04
+    if hasattr(decimate, "use_collapse_triangulate"):
+        decimate.use_collapse_triangulate = True
+    context.view_layer.objects.active = low_obj
+    bpy.ops.object.modifier_apply(modifier=decimate.name)
+
+
+class POPTOOLS_OT_marmoset_zbrush_like_lowpoly(Operator):
+    """复制选中模型并使用Blender内流程生成类ZBrush低模拓扑"""
+    bl_idname = "poptools.marmoset_zbrush_like_lowpoly"
+    bl_label = "类ZBrush低模拓扑"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return hasattr(context.scene, "poptools_props") and any(
+            obj.type == "MESH" for obj in context.selected_objects
+        )
+
+    def execute(self, context):
+        high_objects = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if not high_objects:
+            self.report({"ERROR"}, "请先选择需要拓扑的高模对象")
+            return {"CANCELLED"}
+
+        if not hasattr(bpy.ops, "qremesher") or not hasattr(bpy.ops.qremesher, "remesh"):
+            self.report({"ERROR"}, "未找到四边面重构插件 qremesher.remesh，请先启用 Quad Remesher")
+            return {"CANCELLED"}
+
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+        self._generated_low_names = []
+        self._pending_high_names = [obj.name for obj in high_objects]
+        self._active_job = None
+        original_selection = list(context.selected_objects)
+        original_active = context.view_layer.objects.active
+        self._original_selection_names = [obj.name for obj in original_selection]
+        self._original_active_name = original_active.name if original_active else ""
+        self._pair_count = len(high_objects)
+        self._prefix = context.scene.poptools_props.marmoset_baker_settings.model_name_prefix.strip()
+        self._job_index = 0
+
+        try:
+            self._start_next_qremesh_job(context)
+        except Exception as exc:
+            if context.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
+            self.report({"ERROR"}, f"类ZBrush低模拓扑失败: {exc}")
+            return {"CANCELLED"}
+
+        self._timer = context.window_manager.event_timer_add(0.5, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        self.report({"INFO"}, "已启动Quad Remesher，完成后将自动继续Shrinkwrap/细分/减面")
+        return {"RUNNING_MODAL"}
+
+    def _start_next_qremesh_job(self, context):
+        if self._job_index >= len(self._pending_high_names):
+            self._active_job = None
+            return False
+
+        high_name = self._pending_high_names[self._job_index]
+        high_obj = bpy.data.objects.get(high_name)
+        if not high_obj or high_obj.type != "MESH":
+            raise RuntimeError(f"高模对象不存在或不是网格: {high_name}")
+
+        base_name = build_pair_base_name(self._prefix, high_obj.name, self._job_index, self._pair_count)
+        low_obj = high_obj.copy()
+        low_obj.data = high_obj.data.copy()
+        low_obj.animation_data_clear()
+        low_obj.name = f"{base_name}{LOW_SUFFIX}"
+        rename_mesh_data(low_obj)
+        low_obj.data.materials.clear()
+        context.collection.objects.link(low_obj)
+
+        for selected in context.selected_objects:
+            selected.select_set(False)
+        low_obj.select_set(True)
+        context.view_layer.objects.active = low_obj
+
+        if mesh_has_boundary_edges(low_obj):
+            fill_boundary_holes(context, low_obj)
+        run_voxel_remesh(context, low_obj, 0.03)
+
+        qremesher = getattr(context.scene, "qremesher", None)
+        history_len = len(qremesher.history) if qremesher else 0
+        self._active_job = {
+            "high_name": high_obj.name,
+            "low_name": low_obj.name,
+            "history_len": history_len,
+            "start_time": time.time(),
+        }
+
+        result = bpy.ops.qremesher.remesh("INVOKE_DEFAULT")
+        if "CANCELLED" in result:
+            raise RuntimeError("Quad Remesher启动失败")
+        return True
+
+    def _is_qremesh_done(self, context):
+        if not self._active_job:
+            return False
+        low_obj = bpy.data.objects.get(self._active_job["low_name"])
+        if not low_obj:
+            return False
+        qremesher = getattr(context.scene, "qremesher", None)
+        if not qremesher:
+            return False
+        return (
+            qremesher.history_object == low_obj
+            and len(qremesher.history) > self._active_job["history_len"]
+        )
+
+    def _finish_all(self, context):
+        if hasattr(self, "_timer") and self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        for obj in context.scene.objects:
+            obj.select_set(False)
+        selected_lows = []
+        for name in getattr(self, "_generated_low_names", []):
+            obj = bpy.data.objects.get(name)
+            if obj:
+                obj.select_set(True)
+                selected_lows.append(obj)
+        if selected_lows:
+            context.view_layer.objects.active = selected_lows[0]
+        else:
+            active = bpy.data.objects.get(getattr(self, "_original_active_name", ""))
+            if active:
+                context.view_layer.objects.active = active
+            for name in getattr(self, "_original_selection_names", []):
+                obj = bpy.data.objects.get(name)
+                if obj:
+                    obj.select_set(True)
+
+    def modal(self, context, event):
+        if event.type == "ESC":
+            self._finish_all(context)
+            self.report({"WARNING"}, "类ZBrush低模拓扑已取消")
+            return {"CANCELLED"}
+
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
+
+        try:
+            if not self._active_job:
+                self._finish_all(context)
+                self.report({"INFO"}, f"已完成 {len(self._generated_low_names)} 个类ZBrush低模拓扑")
+                return {"FINISHED"}
+
+            if time.time() - self._active_job["start_time"] > 900:
+                raise RuntimeError("等待Quad Remesher完成超时")
+
+            if not self._is_qremesh_done(context):
+                return {"RUNNING_MODAL"}
+
+            low_obj = bpy.data.objects.get(self._active_job["low_name"])
+            high_obj = bpy.data.objects.get(self._active_job["high_name"])
+            finish_zbrush_like_lowpoly_after_qremesh(context, low_obj, high_obj)
+            self._generated_low_names.append(low_obj.name)
+            self._job_index += 1
+
+            if self._start_next_qremesh_job(context):
+                return {"RUNNING_MODAL"}
+
+            self._finish_all(context)
+            self.report({"INFO"}, f"已完成 {len(self._generated_low_names)} 个类ZBrush低模拓扑")
+            return {"FINISHED"}
+        except Exception as exc:
+            self._finish_all(context)
+            self.report({"ERROR"}, f"类ZBrush低模拓扑失败: {exc}")
+            return {"CANCELLED"}
 
 
 class POPTOOLS_OT_marmoset_show_selected_polycount(Operator):
@@ -2603,6 +3051,7 @@ class POPTOOLS_OT_secure_texture_resources(Operator):
     """收拢工程贴图到textures目录并改为相对路径"""
     bl_idname = "poptools.secure_texture_resources"
     bl_label = "资源贴图防丢失"
+    bl_description = "复制普通文件贴图到当前工程textures目录并改为相对路径；磁盘拷贝不能通过撤销操作回退，完成后请保存.blend"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -2622,7 +3071,9 @@ class POPTOOLS_OT_secure_texture_resources(Operator):
             f"复制 {stats['copied']} 张；"
             f"修复 {stats['relinked']} 张；"
             f"已安全 {stats['already_safe']} 张；"
-            f"打包贴图 {stats['packed']} 张"
+            f"打包贴图 {stats['packed']} 张；"
+            f"跳过 {stats['skipped']} 张；"
+            "请保存当前.blend"
         )
         if stats["missing"]:
             message += f"；仍缺失 {len(stats['missing'])} 张"
@@ -2640,6 +3091,7 @@ class POPTOOLS_OT_smart_find_missing_textures(Operator):
     """智能查找并重连当前工程中丢失的贴图"""
     bl_idname = "poptools.smart_find_missing_textures"
     bl_label = "智能查找丢失贴图"
+    bl_description = "为普通文件贴图查找丢失路径并改为相对路径；完成后请保存.blend"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -2657,7 +3109,9 @@ class POPTOOLS_OT_smart_find_missing_textures(Operator):
         message = (
             f"扫描 {stats['total_nodes']} 个贴图节点；"
             f"发现丢失 {stats['missing_nodes']} 张；"
-            f"重连 {stats['relinked']} 张"
+            f"重连 {stats['relinked']} 张；"
+            f"跳过 {stats['skipped']} 张；"
+            "请保存当前.blend"
         )
         if stats["still_missing"]:
             message += f"；仍缺失 {len(stats['still_missing'])} 张"
@@ -2710,15 +3164,23 @@ class POPTOOLS_OT_marmoset_one_click_bake(Operator):
         output_dir = ensure_directory(os.path.join(work_dir, "textures"))
         prepared_jobs = []
 
-        if settings.bake_mode == "MANY_TO_ONE":
-            group, leftovers = infer_many_to_one_group(objects, settings.model_name_prefix.strip())
+        if settings.bake_mode in {"MANY_TO_MANY", "MANY_TO_ONE"}:
+            is_many_to_one = settings.bake_mode == "MANY_TO_ONE"
+            if is_many_to_one:
+                group, leftovers = infer_many_to_one_group(objects, settings.model_name_prefix.strip())
+            else:
+                group, leftovers = infer_many_to_many_group(objects, settings.model_name_prefix.strip())
             if leftovers:
-                message = "存在未标记高低模的对象，请先在高低模识别区域完成标记: " + ", ".join(obj.name for obj in leftovers)
+                if is_many_to_one:
+                    message = "存在未标记高低模的对象，请先在高低模识别区域完成标记: " + ", ".join(obj.name for obj in leftovers)
+                else:
+                    message = "存在未标记或无法一一配对的对象，请先在高低模识别区域完成标记: " + ", ".join(obj.name for obj in leftovers)
                 notify_user("Marmoset烘焙", message, "ERROR")
                 self.report({"ERROR"}, message)
                 return {"CANCELLED"}
             if not group:
-                self.report({"ERROR"}, "多对一烘焙需要至少一个低模和一个高模")
+                mode_name = "多对一烘焙" if is_many_to_one else "多对多烘焙"
+                self.report({"ERROR"}, f"{mode_name}需要至少一个低模和一个高模")
                 return {"CANCELLED"}
             lows = group["lows"]
             highs = group["highs"]
@@ -2746,9 +3208,12 @@ class POPTOOLS_OT_marmoset_one_click_bake(Operator):
                     group["base_name"],
                     lows,
                     highs,
-                    alignment_pairs=group["pairs"],
+                    alignment_pairs=group["pairs"] or None,
                     shared_output=True,
                     shared_material_name=shared_material_name,
+                    merge_shared_highs=is_many_to_one,
+                    allow_map_fallback_for_all=is_many_to_one,
+                    map_lookup_name=group["base_name"],
                 ))
             except Exception as exc:
                 self.report({"ERROR"}, f"准备烘焙数据失败: {exc}")
@@ -2881,6 +3346,9 @@ class POPTOOLS_PT_marmoset_baker(Panel):
         lowpoly_button = lowpoly_box.row()
         lowpoly_button.scale_y = 1.2
         lowpoly_button.operator("poptools.marmoset_generate_lowpoly", icon="MOD_DECIM")
+        zbrush_like_button = lowpoly_box.row()
+        zbrush_like_button.scale_y = 1.2
+        zbrush_like_button.operator("poptools.marmoset_zbrush_like_lowpoly", icon="MOD_REMESH")
         polycount_row = lowpoly_box.row(align=True)
         polycount_row.scale_y = 1.1
         polycount_row.operator("poptools.marmoset_show_selected_polycount", icon="MESH_DATA")
@@ -2942,6 +3410,7 @@ classes = (
     POPTOOLS_OT_marmoset_mark_high,
     POPTOOLS_OT_marmoset_auto_mark_high_low,
     POPTOOLS_OT_marmoset_generate_lowpoly,
+    POPTOOLS_OT_marmoset_zbrush_like_lowpoly,
     POPTOOLS_OT_marmoset_show_selected_polycount,
     POPTOOLS_OT_marmoset_clear_polycount_overlay,
     POPTOOLS_OT_marmoset_ai_translate_model_name,
