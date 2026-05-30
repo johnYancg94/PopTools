@@ -4,6 +4,12 @@ from bpy.types import Panel, Operator
 from bpy.props import StringProperty, EnumProperty
 import re
 from .translation_tools import translate_text_tool, ai_translate_text_tool
+from .core.naming_core import (
+    build_action_name,
+    get_unique_action_name,
+    adjust_number_suffix,
+    rename_action_on_object,
+)
 
 # 全局变量存储键盘映射
 addon_keymaps = []
@@ -173,108 +179,47 @@ class POPTOOLS_OT_translate_action_name(Operator):
     bl_idname = "poptools.translate_action_name"
     bl_label = "翻译动作名称"
     bl_description = "翻译输入的动作名称"
-    
+
     def execute(self, context):
         props = context.scene.poptools_props
-        
+
         if not props.action_animation_name.strip():
             self.report({'WARNING'}, "请先输入动作名称")
             return {'CANCELLED'}
-        
+
         try:
-            # 获取插件首选项
             addon_prefs = context.preferences.addons[__package__].preferences
-            
-            # 翻译文本
             translated_text = translate_text_tool(
                 props.action_animation_name,
-                "auto",  # 自动检测源语言
-                "en",    # 翻译为英文
+                "auto", "en",
                 addon_prefs.tencent_secret_id,
                 addon_prefs.tencent_secret_key,
-                addon_prefs.tencent_region
+                addon_prefs.tencent_region,
             )
-            
             if translated_text:
-                # 使用AI翻译的原始内容，仅添加01后缀
-                base_name = translated_text + "01"
-                
-                # 检查场景中是否有重复的动作名称，如果有则自动增量
-                final_name = self.get_unique_action_name(base_name)
-                
+                final_name = get_unique_action_name(translated_text + "01")
                 props.action_animation_name = final_name
                 self.report({'INFO'}, f"翻译完成: {translated_text} -> {final_name}")
             else:
                 self.report({'ERROR'}, "翻译失败，请检查网络连接和API配置")
-                
         except Exception as e:
             self.report({'ERROR'}, f"翻译出错: {str(e)}")
-            
         return {'FINISHED'}
-    
-    def get_unique_action_name(self, base_name):
-        """获取唯一的动作名称，如果重复则自动增量"""
-        # 获取所有现有的动作名称
-        existing_actions = set()
-        for action in bpy.data.actions:
-            existing_actions.add(action.name)
-        
-        # 如果基础名称不重复，直接返回
-        if base_name not in existing_actions:
-            return base_name
-        
-        # 如果重复，则增量处理
-        # 提取基础名称（去掉数字后缀）
-        import re
-        match = re.match(r'(.+?)(\d+)$', base_name)
-        if match:
-            name_part = match.group(1)
-            start_num = int(match.group(2))
-        else:
-            name_part = base_name
-            start_num = 1
-        
-        # 寻找可用的数字后缀
-        counter = start_num
-        while True:
-            test_name = f"{name_part}{counter:02d}"
-            if test_name not in existing_actions:
-                return test_name
-            counter += 1
 
 class POPTOOLS_OT_decrease_action_number(Operator):
     """减少动作名称中的序号"""
     bl_idname = "poptools.decrease_action_number"
     bl_label = "序号-1"
     bl_description = "将动作名称中的序号减1（不会减为00）"
-    
+
     def execute(self, context):
         props = context.scene.poptools_props
-        current_name = props.action_animation_name.strip()
-        
-        if not current_name:
-            self.report({'WARNING'}, "动画名称为空")
+        ok, result = adjust_number_suffix(props.action_animation_name, -1)
+        if not ok:
+            self.report({'WARNING'}, result)
             return {'CANCELLED'}
-        
-        import re
-        # 匹配末尾的数字
-        match = re.search(r'(.+?)(\d+)$', current_name)
-        
-        if match:
-            name_part = match.group(1)
-            current_num = int(match.group(2))
-            
-            # 不允许减为00或更小
-            if current_num > 1:
-                new_num = current_num - 1
-                new_name = f"{name_part}{new_num:02d}"
-                props.action_animation_name = new_name
-                self.report({'INFO'}, f"序号已减少为: {new_num:02d}")
-            else:
-                self.report({'WARNING'}, "序号不能减少到00或更小")
-        else:
-            self.report({'WARNING'}, "动画名称末尾没有找到数字序号")
-        
+        props.action_animation_name = result
+        self.report({'INFO'}, f"序号已调整为: {result}")
         return {'FINISHED'}
 
 class POPTOOLS_OT_increase_action_number(Operator):
@@ -282,32 +227,15 @@ class POPTOOLS_OT_increase_action_number(Operator):
     bl_idname = "poptools.increase_action_number"
     bl_label = "序号+1"
     bl_description = "将动作名称中的序号加1"
-    
+
     def execute(self, context):
         props = context.scene.poptools_props
-        current_name = props.action_animation_name.strip()
-        
-        if not current_name:
-            self.report({'WARNING'}, "动画名称为空")
+        ok, result = adjust_number_suffix(props.action_animation_name, +1)
+        if not ok:
+            self.report({'WARNING'}, result)
             return {'CANCELLED'}
-        
-        import re
-        # 匹配末尾的数字
-        match = re.search(r'(.+?)(\d+)$', current_name)
-        
-        if match:
-            name_part = match.group(1)
-            current_num = int(match.group(2))
-            new_num = current_num + 1
-            new_name = f"{name_part}{new_num:02d}"
-            props.action_animation_name = new_name
-            self.report({'INFO'}, f"序号已增加为: {new_num:02d}")
-        else:
-            # 如果没有数字，则添加01
-            new_name = current_name + "01"
-            props.action_animation_name = new_name
-            self.report({'INFO'}, "已添加序号: 01")
-        
+        props.action_animation_name = result
+        self.report({'INFO'}, f"序号已调整为: {result}")
         return {'FINISHED'}
 
 class POPTOOLS_OT_ai_translate_action_name(Operator):
@@ -315,65 +243,23 @@ class POPTOOLS_OT_ai_translate_action_name(Operator):
     bl_idname = "poptools.ai_translate_action_name"
     bl_label = "AI翻译动作名称"
     bl_description = "使用AI翻译当前动画名称为英文格式"
-    
+
     def execute(self, context):
         props = context.scene.poptools_props
-        
-        # 检查是否有动画名称
         if not props.action_animation_name.strip():
             self.report({'WARNING'}, "请先输入动画名称")
             return {'CANCELLED'}
-        
         try:
-            # 使用AI翻译工具
             translated_text = ai_translate_text_tool(props.action_animation_name)
-            
             if translated_text:
-                # 使用AI翻译的原始内容，仅添加01后缀
-                base_name = translated_text + "01"
-                
-                # 检查场景中是否有重复的动作名称，如果有则自动增量
-                final_name = self.get_unique_action_name(base_name)
-                
+                final_name = get_unique_action_name(translated_text + "01")
                 props.action_animation_name = final_name
                 self.report({'INFO'}, f"AI翻译完成: {translated_text} -> {final_name}")
             else:
                 self.report({'ERROR'}, "AI翻译失败，请检查网络连接和API配置")
-                
         except Exception as e:
             self.report({'ERROR'}, f"AI翻译出错: {str(e)}")
-            
         return {'FINISHED'}
-    
-    def get_unique_action_name(self, base_name):
-        """获取唯一的动作名称，如果重复则自动增量"""
-        # 获取所有现有的动作名称
-        existing_actions = set()
-        for action in bpy.data.actions:
-            existing_actions.add(action.name)
-        
-        # 如果基础名称不重复，直接返回
-        if base_name not in existing_actions:
-            return base_name
-        
-        # 如果重复，则增量处理
-        # 提取基础名称（去掉数字后缀）
-        import re
-        match = re.match(r'(.+?)(\d+)$', base_name)
-        if match:
-            name_part = match.group(1)
-            start_num = int(match.group(2))
-        else:
-            name_part = base_name
-            start_num = 1
-        
-        # 寻找可用的数字后缀
-        counter = start_num
-        while True:
-            test_name = f"{name_part}{counter:02d}"
-            if test_name not in existing_actions:
-                return test_name
-            counter += 1
 
 class POPTOOLS_OT_set_default_comment(Operator):
     """设置默认中文备注为当前动作名称"""
@@ -422,69 +308,31 @@ class POPTOOLS_OT_rename_action(Operator):
     bl_idname = "poptools.rename_action"
     bl_label = "一键动作重命名"
     bl_description = "按照命名规则重命名选中对象的动作"
-    
+
     def execute(self, context):
         props = context.scene.poptools_props
-        
-        # 检查是否有选中的对象
+
         if not context.selected_objects:
             self.report({'WARNING'}, "请先选择一个对象")
             return {'CANCELLED'}
-        
-        # 检查是否设置了动画类型
-        if not props.action_animation_type:
-            self.report({'WARNING'}, "请先选择动画类型")
+
+        result = rename_action_on_object(
+            obj=context.active_object,
+            animation_type=props.action_animation_type,
+            animation_name=props.action_animation_name,
+            island_name=props.island_name,
+            chinese_comment=props.action_chinese_comment,
+        )
+
+        if not result.ok:
+            icon = 'ERROR' if 'ERROR' in result.message else 'WARNING'
+            self.report({icon}, result.message)
             return {'CANCELLED'}
-        
-        # 检查是否输入了动画名称
-        if not props.action_animation_name.strip():
-            self.report({'WARNING'}, "请先输入动画名称")
-            return {'CANCELLED'}
-        
-        obj = context.active_object
-        if not obj:
-            self.report({'WARNING'}, "没有活动对象")
-            return {'CANCELLED'}
-        
-        # 检查对象是否有动画数据
-        if not obj.animation_data or not obj.animation_data.action:
-            self.report({'WARNING'}, "选中的对象没有动作数据")
-            return {'CANCELLED'}
-        
-        # 生成新的动作名称
-        if props.action_animation_type == "npc_island":
-            # 海岛动画特殊命名规则: ani_npc_海岛名_名称
-            if not props.island_name.strip():
-                self.report({'ERROR'}, "海岛动画类型需要输入海岛名")
-                return {'CANCELLED'}
-            new_name = f"ani_npc_{props.island_name}_{props.action_animation_name}"
-        else:
-            new_name = f"ani_{props.action_animation_type}_{props.action_animation_name}"
-        
-        # 重命名动作
-        old_name = obj.animation_data.action.name
-        obj.animation_data.action.name = new_name
-        
-        # 尝试修改AC_Settings.tags（参考AC插件逻辑）
-        if props.action_chinese_comment.strip():
-            try:
-                # 获取重命名后的动作
-                renamed_action = bpy.data.actions.get(new_name)
-                if renamed_action and hasattr(renamed_action, 'AC_Settings'):
-                    renamed_action.AC_Settings.tags = props.action_chinese_comment.strip()
-                    self.report({'INFO'}, f"动作重命名成功: {old_name} -> {new_name}，标签已更新: {props.action_chinese_comment}")
-                else:
-                    self.report({'INFO'}, f"动作重命名成功: {old_name} -> {new_name}，未找到AC_Settings.tags属性")
-            except Exception as e:
-                self.report({'INFO'}, f"动作重命名成功: {old_name} -> {new_name}，标签更新失败: {str(e)}")
-        else:
-            self.report({'INFO'}, f"动作重命名成功: {old_name} -> {new_name}")
-        
-        # 清空输入框
+
+        self.report({'INFO'}, result.message)
         props.action_animation_name = ""
         props.action_chinese_comment = ""
         props.island_name = ""
-        
         return {'FINISHED'}
 
 class POPTOOLS_PT_action_naming(Panel):

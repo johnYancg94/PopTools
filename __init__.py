@@ -3,6 +3,7 @@ import bpy
 import importlib
 import sys
 from bpy.props import PointerProperty
+from . import agent_skills as _agent_skills
 
 # 插件信息 / Addon Information
 bl_info = {
@@ -104,10 +105,12 @@ def register():
         bpy.types.Scene.poptools_props = PointerProperty(type=modules['props'].PopToolsProperties)
     
     print("PopTools registered successfully!")
+    _agent_skills.register()
 
 def unregister():
     """注销插件 / Unregister addon"""
     print("Unregistering PopTools...")
+    _agent_skills.unregister()
     
     # 删除场景属性
     if hasattr(bpy.types.Scene, 'poptools_props'):
